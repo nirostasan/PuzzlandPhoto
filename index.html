@@ -715,8 +715,11 @@
   }
 
   /* Start screen */
-  #startOverlay .overlay-box {
-    gap: 16px;
+  #gameOverOverlay .overlay-box {
+    padding: 32px 40px;
+    gap: 14px;
+    overflow-y: auto;
+    max-height: 90vh;
   }
 
   /* ── Rewarded Ad Overlay ── */
@@ -1219,7 +1222,8 @@
     </div>
     <div class="overlay-title bad">GAME OVER</div>
     <div class="overlay-sub" id="gameOverSub">You ran out of lives.<br>Better luck next time!</div>
-    <button class="btn btn-primary" onclick="showRewardedAd()">TRY AGAIN</button>
+    <button class="btn btn-primary" onclick="showRewardedAd()"><svg width="14" height="14" viewBox="0 0 12 12" style="vertical-align:middle;margin-right:6px;fill:currentColor"><polygon points="2,1 11,6 2,11"/></svg>TRY AGAIN</button>
+    <button class="btn btn-secondary" onclick="restartLevel()">RESTART LEVEL</button>
     <button class="btn btn-secondary" onclick="restartGame()">RESTART GAME</button>
   </div>
 </div>
@@ -2421,7 +2425,9 @@ async function handleTileClick(clickedIdx) {
 
     if (state.lives <= 0) {
       await sleep(200);
+      state.isAnimating = false;
       showGameOver();
+      return;
     }
     state.isAnimating = false;
   }
@@ -2653,8 +2659,15 @@ async function showRewardedAd() {
   clearInterval(tick);
   adOverlay.classList.remove('active');
 
-  // Restart level — no reward from ads, rewards come from completing peak levels
-  await restartLevel();
+  // Resume same level — restore lives and continue from current grid state
+  state.lives = 3;
+  state.isAnimating = false;
+  isTransitioning = false;
+  updateLivesDisplay();
+  updateAvailableStates();
+  buildQueueBelt();
+  startTimer(Math.max(timerSecondsLeft, 15)); // give at least 15s to continue
+  startMusic();
 }
 
 async function showRewardReveal(key, snapshot) {
