@@ -1101,7 +1101,7 @@
       <div><span>◆</span>3 lives per level</div>
       <div><span>◆</span>Tiles must be adjacent to revealed ones</div>
       <div><span>◆</span>Grid grows each level</div>
-      <div><span>◆</span>10 unique emoji themes 🐶🚀🌸</div>
+
     </div>
     <button class="btn btn-primary" onclick="startGame()">START PLAYING</button>
   </div>
@@ -2467,7 +2467,7 @@ async function showLevelComplete() {
   const nextIsPeak  = isPeakLevel(state.level + 1);
   const nextIsValley = isValleyLevel(state.level + 1);
   const nextLabel   = nextIsPeak ? ' · 🔥 Peak ahead!' : nextIsValley ? ' · 😌 Breather next' : '';
-  sub.textContent   = `Score: ${state.score} pts  ·  Next: ${nextTheme.emoji[0]} ${nextTheme.name} · ${nextCols}×${nextRows}${nextLabel}`;
+  sub.textContent   = `Score: ${state.score} pts  ·  Next: ${nextCols}×${nextRows}${nextLabel}`;
 
   overlay.classList.add('active');
 }
