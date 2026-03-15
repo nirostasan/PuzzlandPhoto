@@ -1,0 +1,3955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Puzzland</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --panel: #1c1c28;
+    --accent: #e8ff47;
+    --accent2: #ff6b6b;
+    --accent3: #47c5ff;
+    --text: #f0f0f0;
+    --muted: #666;
+    --border: rgba(255,255,255,0.07);
+    --reveal-glow: rgba(232,255,71,0.25);
+    --correct-glow: rgba(71,197,255,0.4);
+    --wrong-glow: rgba(255,107,107,0.5);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* Prevent text selection and tap highlight across all interactive elements */
+  button, a, [onclick] {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    width: 100%;
+    height: 100dvh;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  #app {
+    width: 100%;
+    max-width: 430px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* horizontal padding + safe area insets */
+    padding: env(safe-area-inset-top, 0px) 12px env(safe-area-inset-bottom, 8px);
+  }
+
+  /* ── Header: shrinks to content, never grows ── */
+  header {
+    width: 100%;
+    padding: 8px 0 6px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 12px;
+  }
+
+  /* ── Game area: fills all remaining vertical space ── */
+  .game-area {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 0;
+    overflow: visible;
+  }
+
+  /* ── Progress bar: fixed thin strip ── */
+  .progress-bar-wrap {
+    width: 100%;
+    height: 4px;
+    background: var(--panel);
+    border-radius: 99px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent3), var(--accent));
+    border-radius: 99px;
+    transition: width 0.5s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  /* ── Reward bar: always reserves its height ── */
+  .reward-bar {
+    width: 100%;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  /* ── Grid outer: flex-grows to fill remaining space ── */
+  .grid-outer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+
+  #grid {
+    display: grid;
+    gap: 3px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6), inset 0 0 0 1px var(--border);
+    flex-shrink: 0;
+  }
+
+  /* ── Queue belt: fixed height, never grows ── */
+  .next-section {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    flex-shrink: 0;
+    overflow: visible;
+  }
+
+  .queue-viewport {
+    width: 100%;
+    overflow: visible;
+    padding: 8px 8px 12px 8px;
+    /* Reserve space from first paint so grid never shifts down */
+    min-height: 130px;
+  }
+
+  .queue-belt {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 8px 8px 12px 8px;
+    overflow: visible;
+    /* Match viewport min-height so belt holds space before JS populates it */
+    min-height: 110px;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.5;
+  }
+
+  .logo {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    flex-shrink: 0;
+    transform: scaleX(0.82);
+    transform-origin: left center;
+  }
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .logo .puzzle-icon {
+    font-size: 0.8rem;
+    margin-right: 3px;
+    animation: iconWiggle 2.5s ease-in-out infinite;
+    display: inline-block;
+  }
+
+  .logo-text { display: none; }
+
+  .logo .p1 { color: #ff6b6b; transform: rotate(-8deg) translateY(2px); display: inline-block; }
+  .logo .p2 { color: #ffd166; transform: rotate(5deg) translateY(-2px); display: inline-block; }
+  .logo .p3 { color: #06d6a0; transform: rotate(-4deg) translateY(3px); display: inline-block; }
+  .logo .p4 { color: #47c5ff; transform: rotate(6deg) translateY(-1px); display: inline-block; }
+  .logo .p5 { color: #e8ff47; transform: rotate(-5deg) translateY(2px); display: inline-block; }
+  .logo .p6 { color: #ff9f1c; transform: rotate(4deg) translateY(-3px); display: inline-block; }
+  .logo .p7 { color: #c77dff; transform: rotate(-6deg) translateY(1px); display: inline-block; }
+  .logo .p8 { color: #ff6b6b; transform: rotate(5deg) translateY(-2px); display: inline-block; }
+
+  @keyframes iconWiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25%       { transform: rotate(-12deg); }
+    75%       { transform: rotate(12deg); }
+  }
+
+  .hud {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .level-badge {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 99px;
+    color: var(--accent);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    gap: 1px;
+  }
+  .level-label {
+    font-size: 0.48rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    opacity: 0.7;
+    text-transform: uppercase;
+  }
+  .level-num {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .lives-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+  }
+
+  .lives {
+    display: flex;
+    gap: 4px;
+  }
+
+  .heart {
+    width: 26px;
+    height: 26px;
+    transition: all 0.3s;
+  }
+
+  .heart svg { width: 100%; height: 100%; }
+  .heart.lost svg path { fill: #333; }
+  .heart.lost { transform: scale(0.8); }
+
+  .mute-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text);
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.15s;
+    line-height: 0;
+    flex-shrink: 0;
+    border-radius: 8px;
+  }
+  .mute-btn:hover { opacity: 1; transform: scale(1.15); }
+  .mute-btn.muted { color: #9ca3af; }
+
+  /* Grid container */
+
+  .reward-btn {
+    --reward-glow: #fff;
+    position: relative;
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 16px;
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 0 0 0 var(--reward-glow);
+  }
+  .reward-btn.reward-empty {
+    opacity: 1;
+    cursor: default;
+    pointer-events: none;
+    filter: grayscale(0.4) brightness(0.75);
+  }
+  .reward-btn.reward-empty .reward-emoji {
+    filter: grayscale(1);
+  }
+
+  .reward-btn:not(.reward-empty):hover {
+    transform: scale(1.14) translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2), 0 0 14px var(--reward-glow);
+  }
+  .reward-btn:active { transform: scale(0.93); }
+
+  .reward-emoji {
+    font-size: 1.6rem;
+    line-height: 1;
+    display: block;
+  }
+
+  .reward-count {
+    position: absolute;
+    bottom: -6px;
+    right: -6px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    font-family: 'DM Mono', monospace;
+    line-height: 1;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    border: 2px solid currentColor;
+    border-radius: 99px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+
+  .reward-bar-empty {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    opacity: 0.5;
+  }
+
+  @keyframes rewardPop {
+    0%   { transform: scale(0.4) rotate(-20deg); opacity: 0; }
+    65%  { transform: scale(1.18) rotate(4deg); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  .reward-btn.popping { animation: rewardPop 0.45s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+  @keyframes rewardUse {
+    0%   { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  .reward-btn.using { animation: rewardUse 0.3s ease forwards; pointer-events: none; }
+
+  .grid-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  #grid {
+    display: grid;
+    gap: 3px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6), inset 0 0 0 1px var(--border);
+  }
+
+  .tile {
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+    background: var(--surface);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.03);
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 1;
+  }
+
+  .tile:hover::before { opacity: 1; }
+
+  .tile.revealed {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .tile.revealed img {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .tile img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transform: scale(1.1);
+    transition: opacity 0.4s, transform 0.4s;
+  }
+
+  .tile.available {
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(232,255,71,0.3) inset;
+  }
+
+  .tile.available::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--reveal-glow);
+    animation: pulse 2s ease-in-out infinite;
+    z-index: 1;
+  }
+
+  .tile.unavailable {
+    cursor: not-allowed;
+  }
+
+  .tile.flash-correct {
+    animation: flashCorrect 0.5s ease forwards;
+  }
+
+  .tile.flash-wrong {
+    animation: flashWrong 0.4s ease forwards;
+  }
+
+  /* Tile grid pattern for unrevealed */
+  .tile-inner {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.08);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+
+  @keyframes flashCorrect {
+    0% { box-shadow: 0 0 0 0 var(--correct-glow); }
+    50% { box-shadow: 0 0 30px 12px var(--correct-glow); }
+    100% { box-shadow: 0 0 0 0 rgba(71,197,255,0); }
+  }
+
+  @keyframes flashWrong {
+    0% { transform: translateX(0); box-shadow: 0 0 0 0 var(--wrong-glow); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); box-shadow: 0 0 20px 8px var(--wrong-glow); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+    100% { transform: translateX(0); box-shadow: 0 0 0 0 rgba(255,107,107,0); }
+  }
+
+
+
+  .next-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .q-tile {
+    flex-shrink: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    transform-origin: bottom center;
+  }
+
+  .q-tile img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .q-tile.is-current {
+    box-shadow: 0 0 0 2.5px var(--accent), 0 0 28px rgba(232,255,71,0.3);
+    animation: qFloat 3s ease-in-out infinite;
+  }
+
+  @keyframes qFloat {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-5px); }
+  }
+
+  .q-tile.is-next { opacity: 0.6; }
+
+  /* Shuffle cascade ripple */
+  @keyframes shuffleHop {
+    0%   { transform: translateY(0)     scale(1); }
+    35%  { transform: translateY(-12px) scale(1.08); }
+    70%  { transform: translateY(3px)   scale(0.96); }
+    100% { transform: translateY(0)     scale(1); }
+  }
+  @keyframes shuffleLand {
+    0%   { transform: translateY(-22px) scale(0.85); opacity: 0.4; }
+    55%  { transform: translateY(5px)   scale(1.12); opacity: 1; }
+    78%  { transform: translateY(-4px)  scale(0.97); }
+    100% { transform: translateY(0)     scale(1); }
+  }
+  .q-tile.shuffle-hop  { animation: shuffleHop  0.32s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .q-tile.shuffle-land { animation: shuffleLand 0.42s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+  /* Belt slides in from the left */
+  @keyframes beltSlideIn {
+    from { transform: translateX(calc(-1 * var(--slide-from))); }
+    to   { transform: translateX(0); }
+  }
+
+  .queue-belt.animating {
+    animation: beltSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* Current tile grows from small→full using scale, anchored to bottom */
+  @keyframes tileGrow {
+    from { transform: scale(var(--scale-from)); }
+    to   { transform: scale(1); }
+  }
+
+  .q-tile.is-current.growing {
+    animation: tileGrow 0.4s cubic-bezier(0.34, 1.45, 0.64, 1) forwards;
+  }
+
+  .hint-text {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    max-width: 320px;
+    line-height: 1.6;
+  }
+  .hint-text strong { color: var(--accent); }
+
+  /* Score / status */
+  .status-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+  }
+
+  .score-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+  }
+
+  .score-label { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.08em; }
+  .score-value { color: var(--text); font-weight: 500; font-size: 1rem; }
+  .score-value.accent { color: var(--accent); }
+
+  /* Overlay screens */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,15,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+
+  .overlay.active {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .overlay-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 48px 56px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    max-width: 380px;
+    width: 90%;
+    transform: translateY(20px);
+    transition: transform 0.4s;
+  }
+
+  .overlay.active .overlay-box { transform: translateY(0); }
+
+  .overlay-icon { font-size: 3.5rem; line-height: 1; }
+  .broken-piece { display: inline-block; }
+  .piece-left  { animation: splitLeft  2.4s ease-in-out infinite; transform-origin: 60px 50px; }
+  .piece-right { animation: splitRight 2.4s ease-in-out infinite; transform-origin: 60px 50px; }
+  @keyframes splitLeft {
+    0%,35%,100% { transform: translate(0,0) rotate(0deg); }
+    55%,75%     { transform: translate(-10px, 5px) rotate(-15deg); }
+  }
+  @keyframes splitRight {
+    0%,35%,100% { transform: translate(0,0) rotate(0deg); }
+    55%,75%     { transform: translate(10px, 5px) rotate(15deg); }
+  }
+
+  .overlay-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+  .overlay-title.good { color: var(--accent); }
+  .overlay-title.bad { color: var(--accent2); }
+
+  .overlay-sub {
+    font-size: 0.9rem;
+    color: var(--muted);
+    line-height: 1.6;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .btn {
+    padding: 14px 36px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: none;
+    border-radius: 99px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(232,255,71,0.4);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+
+  /* Completed photo preview in overlay */
+  .completed-grid {
+    display: grid;
+    gap: 2px;
+    border-radius: 8px;
+    overflow: hidden;
+    /* size set dynamically in JS to match cols×rows aspect ratio */
+    max-width: 220px;
+    max-height: 280px;
+  }
+
+  .completed-grid img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Start screen */
+  #startOverlay .overlay-box {
+    gap: 16px;
+  }
+
+  /* ── Rewarded Ad Overlay ── */
+  .ad-box {
+    background: #111118;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 24px;
+    width: min(340px, 90vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .ad-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    align-self: flex-end;
+  }
+  .ad-placeholder {
+    width: 100%;
+    height: 180px;
+    background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+    border-radius: 12px;
+    border: 2px dashed rgba(255,255,255,0.12);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .ad-icon { font-size: 2.5rem; }
+  .ad-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+    opacity: 0.6;
+  }
+  .ad-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  .ad-skip-wrap {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .ad-timer-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .ad-timer-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--accent3);
+    border-radius: 99px;
+    transform-origin: left;
+    animation: adDrain 3s linear forwards;
+  }
+  @keyframes adDrain {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+  }
+  .ad-skip-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ad-skip-text span { color: var(--accent3); font-weight: 700; }
+
+  .feature-list {
+    text-align: left;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .feature-list span { color: var(--accent); margin-right: 8px; }
+
+  /* Shake animation for lives */
+  @keyframes lifeShake {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.4) rotate(-10deg); }
+    75% { transform: scale(0.9) rotate(5deg); }
+  }
+
+  .heart.shake { animation: lifeShake 0.4s ease; }
+
+  /* ── Timer ── */
+  .timer-wrap {
+    display: flex;
+    align-items: center;
+  }
+
+  .timer-ring {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+
+  .timer-ring svg {
+    position: absolute;
+    inset: 0;
+    width: 44px;
+    height: 44px;
+    transform: rotate(-90deg);
+  }
+
+  .timer-ring-bg {
+    fill: none;
+    stroke: var(--panel);
+    stroke-width: 4;
+  }
+
+  .timer-ring-fill {
+    fill: none;
+    stroke: var(--accent3);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 144.513; /* 2 * PI * 23 */
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.9s linear, stroke 0.4s;
+  }
+
+  .timer-ring-fill.warn  { stroke: #fbbf24; }
+  .timer-ring-fill.danger { stroke: var(--accent2); }
+
+  .timer-number {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text);
+    transition: color 0.4s;
+  }
+
+  .timer-number.warn   { color: #fbbf24; }
+  .timer-number.danger { color: var(--accent2); }
+
+  @keyframes timeBonusPop {
+    0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    30%  { transform: translateX(-50%) translateY(-14px) scale(1.25); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-36px) scale(0.9); }
+  }
+
+  /* ── Reward Reveal ── */
+  .reward-reveal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  .reward-reveal-backdrop.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+  .reward-reveal-you-got {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: -0.01em;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(-18px);
+    animation: youGotDrop 0.5s cubic-bezier(0.34,1.4,0.64,1) 0.1s forwards;
+  }
+  .reward-reveal-you-got span {
+    background: linear-gradient(135deg, #ffd97d, #ff9a3c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  @keyframes youGotDrop {
+    0%   { opacity: 0; transform: translateY(-24px) scale(0.85); }
+    70%  { opacity: 1; transform: translateY(4px) scale(1.04); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .reward-reveal-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .reward-reveal-icon {
+    font-size: 5rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 24px var(--reveal-glow, #fff));
+    animation: rewardRevealBounce 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards;
+  }
+  @keyframes rewardRevealBounce {
+    0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+    70%  { transform: scale(1.15) rotate(5deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  .reward-reveal-label {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.02em;
+  }
+  .reward-reveal-desc {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.65);
+    letter-spacing: 0.05em;
+    text-align: center;
+  }
+  .reward-reveal-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 8px;
+    animation: revealSubPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes revealSubPulse {
+    0%, 100% { opacity: 0.35; }
+    50%       { opacity: 0.7; }
+  }
+
+  /* Flying reward token */
+  .reward-fly-token {
+    position: fixed;
+    z-index: 800;
+    border-radius: 16px;
+    border-width: 2px;
+    border-style: solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transform-origin: center center;
+  }
+
+  /* ── Reward Toast ── */
+  .reward-toast {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%) translateY(10px);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 8px 18px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 600;
+    pointer-events: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .reward-toast.visible {
+    opacity: 1;
+    transform: var(--visible-transform, translateX(-50%) translateY(-50%));
+  }
+
+  .time-bonus-pop {
+    position: fixed;
+    z-index: 999;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #4ade80;
+    text-shadow: 0 0 8px rgba(74,222,128,0.8);
+    pointer-events: none;
+    transform: translateX(-50%);
+    animation: timeBonusPop 0.9s cubic-bezier(0.22,1,0.36,1) forwards;
+    white-space: nowrap;
+  }
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.12); }
+  }
+
+  .timer-ring.danger-pulse {
+    animation: timerPulse 0.6s ease-in-out infinite;
+  }
+
+  .timer-label {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+<header>
+  <div class="logo">
+    <span class="puzzle-icon">🧩</span><span class="p1">P</span><span class="p2">u</span><span class="p3">z</span><span class="p4">z</span><span class="p5">l</span><span class="p6">a</span><span class="p7">n</span><span class="p8">d</span>
+  </div>
+  <button class="mute-btn" id="muteBtn" onclick="toggleMute()" aria-label="Toggle music">
+    <svg id="muteSvg" viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+      <!-- Clean single eighth note -->
+      <ellipse cx="7.5" cy="18.5" rx="4" ry="2.8" fill="currentColor"/>
+      <rect x="11" y="4" width="2.2" height="14.5" rx="1.1" fill="currentColor"/>
+      <path d="M11 4 Q18 2 20 6 Q18 5 13.2 6.5 L13.2 4.5 Q18 3 20 6" fill="currentColor"/>
+      <!-- Red slash — hidden when music on -->
+      <line id="muteSlash" x1="3" y1="3" x2="21" y2="21" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" display="none"/>
+    </svg>
+  </button>
+  <div class="hud">
+    <div class="level-badge" id="levelBadge"><span class="level-label">LEVEL</span><span class="level-num" id="levelNum">1</span></div>
+
+    <div class="timer-wrap">
+      <div class="timer-ring" id="timerRing">
+        <svg viewBox="0 0 54 54" width="44" height="44">
+          <circle class="timer-ring-bg" cx="27" cy="27" r="23"/>
+          <circle class="timer-ring-fill" id="timerArc" cx="27" cy="27" r="23"/>
+        </svg>
+        <div class="timer-number" id="timerNumber">—</div>
+      </div>
+    </div>
+    <div class="lives-wrap">
+      <div class="lives" id="livesDisplay"></div>
+    </div>
+  </div>
+</header>
+
+<div class="game-area">
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="progressBar" style="width:0%"></div>
+  </div>
+
+  <div class="reward-bar" id="rewardBar"></div>
+
+  <div class="grid-outer">
+    <div id="grid"></div>
+  </div>
+
+  <div class="next-section">
+    <div class="queue-viewport">
+      <div class="queue-belt" id="queueBelt"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+<!-- Overlays -->
+<div class="overlay active" id="startOverlay">
+  <div class="overlay-box">
+    <div class="overlay-icon">🧩</div>
+    <div class="overlay-title good" style="display:flex;gap:0;justify-content:center;letter-spacing:-0.02em;">
+      <span style="color:#ff6b6b;display:inline-block;transform:rotate(-8deg) translateY(2px)">P</span><span style="color:#ffd166;display:inline-block;transform:rotate(5deg) translateY(-2px)">u</span><span style="color:#06d6a0;display:inline-block;transform:rotate(-4deg) translateY(3px)">z</span><span style="color:#47c5ff;display:inline-block;transform:rotate(6deg) translateY(-1px)">z</span><span style="color:#e8ff47;display:inline-block;transform:rotate(-5deg) translateY(2px)">l</span><span style="color:#ff9f1c;display:inline-block;transform:rotate(4deg) translateY(-3px)">a</span><span style="color:#c77dff;display:inline-block;transform:rotate(-6deg) translateY(1px)">n</span><span style="color:#ff6b6b;display:inline-block;transform:rotate(5deg) translateY(-2px)">d</span>
+    </div>
+    <div class="overlay-sub">Rebuild photos tile by tile.<br>Place each piece in its correct spot.</div>
+    <div class="feature-list">
+      <div><span>◆</span>3 lives per level</div>
+      <div><span>◆</span>Tiles must be adjacent to revealed ones</div>
+      <div><span>◆</span>Grid grows each level</div>
+      <div><span>◆</span>10 unique emoji themes 🐶🚀🌸</div>
+    </div>
+    <button class="btn btn-primary" onclick="startGame()">START PLAYING</button>
+  </div>
+</div>
+
+<div class="overlay" id="levelCompleteOverlay">
+  <div class="overlay-box">
+    <div class="overlay-icon">🎉</div>
+    <div class="overlay-title good" id="levelCompleteTitle">LEVEL COMPLETE!</div>
+    <div class="completed-grid" id="completedPreview"></div>
+    <div class="overlay-sub" id="levelCompleteSub">Great job! Next level has a bigger grid.</div>
+    <button class="btn btn-primary" id="nextLevelBtn" onclick="nextLevel()">NEXT LEVEL →</button>
+  </div>
+</div>
+
+<div class="overlay" id="gameOverOverlay">
+  <div class="overlay-box">
+    <div class="overlay-icon broken-piece">
+      <svg viewBox="0 0 120 100" width="86" height="72" xmlns="http://www.w3.org/2000/svg">
+        <!--
+          A classic jigsaw piece with:
+          - Tab (outward nub) on TOP
+          - Blank (inward notch) on RIGHT  
+          - Tab (outward nub) on BOTTOM
+          - Blank (inward notch) on LEFT
+          Split vertically at x=60 into LEFT and RIGHT halves.
+          The split edge runs straight down x=60 (no tab/blank on the split).
+        -->
+
+        <!-- Shared gradient for depth -->
+        <defs>
+          <radialGradient id="pieceGrad" cx="40%" cy="35%" r="65%">
+            <stop offset="0%"   stop-color="#ef5350"/>
+            <stop offset="100%" stop-color="#b71c1c"/>
+          </radialGradient>
+          <radialGradient id="pieceGrad2" cx="60%" cy="35%" r="65%">
+            <stop offset="0%"   stop-color="#ef5350"/>
+            <stop offset="100%" stop-color="#b71c1c"/>
+          </radialGradient>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#7f0000" flood-opacity="0.5"/>
+          </filter>
+        </defs>
+
+        <!-- ═══ LEFT HALF ═══
+             Edges: top-left corner → top tab → split(x=60)
+                    down split edge
+                    bottom(x=60) → bottom tab → bottom-left corner
+                    left blank (notch inward) → back to top-left
+        -->
+        <g class="piece-left" filter="url(#shadow)">
+          <path d="
+            M 10 15
+            L 32 15
+            C 32 5, 38 1, 44 5
+            C 50 9, 50 15, 44 15
+            L 60 15
+
+            L 60 85
+
+            L 44 85
+            C 44 91, 50 97, 56 93
+            C 62 89, 62 85, 56 85
+            L 10 85
+
+            L 10 68
+            C 2 68, -2 62, 2 56
+            C 6 50, 10 50, 10 44
+            L 10 15 Z
+          " fill="url(#pieceGrad)" stroke="#7f0000" stroke-width="2" stroke-linejoin="round"/>
+          <!-- Highlight sheen -->
+          <path d="M 15 20 Q 30 15 44 20" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="2.5" stroke-linecap="round"/>
+        </g>
+
+        <!-- ═══ RIGHT HALF ═══
+             Edges: split(x=60,top) → right notch (blank inward) → right edge → top-right corner
+                    right edge down → right notch(blank) 
+                    bottom-right corner → bottom nub notch area  
+                    bottom edge → split(x=60,bottom)
+                    up split edge back to start
+        -->
+        <g class="piece-right" filter="url(#shadow)">
+          <path d="
+            M 60 15
+            L 76 15
+            C 76 9, 82 3, 88 7
+            C 94 11, 94 15, 88 15
+            L 110 15
+
+            L 110 38
+            C 118 38, 122 44, 118 50
+            C 114 56, 110 56, 110 62
+            L 110 85
+
+            L 60 85
+
+            L 60 15 Z
+          " fill="url(#pieceGrad2)" stroke="#7f0000" stroke-width="2" stroke-linejoin="round"/>
+          <!-- Highlight sheen -->
+          <path d="M 65 20 Q 85 15 100 20" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="2.5" stroke-linecap="round"/>
+        </g>
+
+        <!-- ═══ BREAK LINE ═══ jagged crack down x=60 -->
+        <polyline
+          points="60,15 57,26 63,36 58,47 62,57 57,67 61,76 60,85"
+          fill="none" stroke="#4a0000" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+        <!-- Crack debris chips -->
+        <circle cx="57" cy="31" r="1.8" fill="#7f0000" opacity="0.8"/>
+        <circle cx="63" cy="51" r="1.4" fill="#7f0000" opacity="0.7"/>
+        <circle cx="58" cy="70" r="1.2" fill="#7f0000" opacity="0.6"/>
+        <circle cx="64" cy="42" r="1"   fill="#c62828" opacity="0.5"/>
+      </svg>
+    </div>
+    <div class="overlay-title bad">GAME OVER</div>
+    <div class="overlay-sub" id="gameOverSub">You ran out of lives.<br>Better luck next time!</div>
+    <button class="btn btn-primary" onclick="showRewardedAd()">TRY AGAIN</button>
+    <button class="btn btn-secondary" onclick="restartGame()">RESTART GAME</button>
+  </div>
+</div>
+
+<!-- Interstitial Ad Overlay -->
+<div class="overlay" id="interstitialAdOverlay">
+  <div class="ad-box">
+    <div class="ad-label">Advertisement</div>
+    <div class="ad-placeholder">
+      <div class="ad-icon">📢</div>
+      <div class="ad-title">Your Ad Here</div>
+      <div class="ad-sub">Interstitial Ad Placeholder</div>
+    </div>
+    <div class="ad-skip-wrap">
+      <div class="ad-timer-bar"><div class="ad-timer-fill" id="interstitialTimerFill" style="animation-duration:5s"></div></div>
+      <div class="ad-skip-text">Skip in <span id="interstitialCountdown">5</span>s</div>
+    </div>
+    <button class="btn btn-secondary" id="interstitialSkipBtn" onclick="skipInterstitialAd()" style="display:none;width:100%;">SKIP →</button>
+  </div>
+</div>
+
+<!-- Restart Confirm Dialog -->
+<div class="overlay" id="restartConfirmOverlay">
+  <div class="overlay-box" style="gap:16px;padding:36px 32px;">
+    <div class="overlay-icon">⚠️</div>
+    <div class="overlay-title" style="font-size:1.2rem;line-height:1.3;">Restart the game from level 1 and delete your saved progress?</div>
+    <div style="display:flex;gap:12px;width:100%;margin-top:4px;">
+      <button class="btn btn-secondary" style="flex:1;" onclick="hideRestartConfirm()">No</button>
+      <button class="btn btn-primary" style="flex:1;background:var(--accent2);border-color:var(--accent2);" onclick="confirmRestart()">Yes</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="overlay" id="adOverlay">
+  <div class="ad-box">
+    <div class="ad-label">Advertisement</div>
+    <div class="ad-placeholder">
+      <div class="ad-icon">📢</div>
+      <div class="ad-title">Your Ad Here</div>
+      <div class="ad-sub">Rewarded Ad Placeholder</div>
+    </div>
+    <div class="ad-skip-wrap">
+      <div class="ad-timer-bar"><div class="ad-timer-fill" id="adTimerFill"></div></div>
+      <div class="ad-skip-text">Resuming in <span id="adCountdown">3</span>s</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── LEVEL THEMES ─────────────────────────────────────────────────────────────
+const LEVEL_THEMES = [
+  // ── Original 10 ──
+  {
+    name: 'Animals',
+    emoji: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐸'],
+    bg: ['#1a472a','#2d6a4f','#40916c'],
+    colors: ['#52b788','#95d5b2','#b7e4c7','#d8f3dc','#74c69d'],
+  },
+  {
+    name: 'Vehicles',
+    emoji: ['🚗','🚕','🚙','🚌','🚎','🏎','🚓','🚑','🚒','✈️','🚀','🛸'],
+    bg: ['#03045e','#0077b6','#023e8a'],
+    colors: ['#0096c7','#00b4d8','#48cae4','#90e0ef','#ade8f4'],
+  },
+  {
+    name: 'Space',
+    emoji: ['🌙','⭐','🌟','💫','✨','🪐','☄️','🌍','🌕','🔭','🛸','🚀'],
+    bg: ['#10002b','#240046','#3c096c'],
+    colors: ['#5a189a','#7b2fbe','#9d4edd','#c77dff','#e0aaff'],
+  },
+  {
+    name: 'Food',
+    emoji: ['🍕','🍔','🍟','🌮','🍣','🍜','🍩','🎂','🍦','🍭','🧁','🍓'],
+    bg: ['#7f1d1d','#991b1b','#b91c1c'],
+    colors: ['#ef4444','#f97316','#fbbf24','#fde68a','#fef3c7'],
+  },
+  {
+    name: 'Nature',
+    emoji: ['🌸','🌺','🌻','🌹','🌷','🌼','🍀','🍁','🍂','🌿','🌱','🎋'],
+    bg: ['#4a1942','#6b2d6b','#7b3f7b'],
+    colors: ['#ff6eb4','#ff9ece','#ffb6d9','#ffd6ea','#ffe8f3'],
+  },
+  {
+    name: 'Sports',
+    emoji: ['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🥊','⛸️','🏆'],
+    bg: ['#1c1917','#292524','#44403c'],
+    colors: ['#f59e0b','#fbbf24','#fcd34d','#fde68a','#fffbeb'],
+  },
+  {
+    name: 'Weather',
+    emoji: ['☀️','🌤','⛅','🌥','☁️','🌦','⛈','🌩','❄️','🌈','🌊','🌪'],
+    bg: ['#0c1445','#1a237e','#283593'],
+    colors: ['#42a5f5','#64b5f6','#90caf9','#bbdefb','#e3f2fd'],
+  },
+  {
+    name: 'Music',
+    emoji: ['🎵','🎶','🎸','🎹','🎺','🎻','🥁','🎷','🎤','🎧','🎼','🪗'],
+    bg: ['#1a0533','#2d0a57','#3d0d6e'],
+    colors: ['#c026d3','#d946ef','#e879f9','#f0abfc','#fae8ff'],
+  },
+  {
+    name: 'Ocean',
+    emoji: ['🐠','🐟','🐡','🦈','🐙','🦑','🦀','🦞','🐚','🪸','🐋','🐬'],
+    bg: ['#012030','#013a52','#014f6e'],
+    colors: ['#0096c7','#00b4d8','#48cae4','#90e0ef','#caf0f8'],
+  },
+  {
+    name: 'Fantasy',
+    emoji: ['🧙','🧚','🧜','🧝','🐉','🦄','🧸','👑','💎','🪄','🔮','⚔️'],
+    bg: ['#0d0221','#1a044a','#2a0a6e'],
+    colors: ['#7c3aed','#8b5cf6','#a78bfa','#c4b5fd','#ede9fe'],
+  },
+
+  // ── Nature & World ──
+  {
+    name: 'Volcano',
+    emoji: ['🌋','🔥','💥','🪨','⛰️','🌋','🫧','🌡️','💨','☁️','🏔️','🌊'],
+    bg: ['#3b0000','#7f1100','#b22000'],
+    colors: ['#ff4500','#ff6b2b','#ff8c00','#ffb347','#ffd700'],
+  },
+  {
+    name: 'Deep Sea',
+    emoji: ['🦑','🐙','🦭','🐟','🦐','🪼','🐡','🦀','🐚','🌊','🏴‍☠️','💀'],
+    bg: ['#000814','#001233','#012a4a'],
+    colors: ['#023e8a','#0077b6','#00b4d8','#48cae4','#ade8f4'],
+  },
+  {
+    name: 'Garden',
+    emoji: ['🦋','🐛','🐝','🐞','🌻','🌸','🍄','🌿','🦗','🐜','🌼','🌱'],
+    bg: ['#1b4332','#2d6a4f','#40916c'],
+    colors: ['#74c69d','#95d5b2','#b7e4c7','#d8f3dc','#f8ffe5'],
+  },
+  {
+    name: 'Mushroom Forest',
+    emoji: ['🍄','🌲','🦔','🐿️','🦉','🌙','✨','🍃','🐸','🌿','🦋','🪵'],
+    bg: ['#1a0a00','#3d1a00','#5c2d00'],
+    colors: ['#b5451b','#d4622a','#e8833a','#f0a868','#f8d5a3'],
+  },
+  {
+    name: 'Desert',
+    emoji: ['🌵','🦂','🐪','🦎','🌅','🏜️','💨','🌞','🪨','🐍','🦅','⭐'],
+    bg: ['#5c3d11','#8b5e3c','#c49a6c'],
+    colors: ['#e9c46a','#f4a261','#e76f51','#d4845a','#f0cfa0'],
+  },
+  {
+    name: 'Arctic',
+    emoji: ['❄️','🐧','🦭','🐻‍❄️','🌨️','⛄','🏔️','🌊','🪨','🌬️','💨','🌌'],
+    bg: ['#0a1628','#162844','#1e3a5f'],
+    colors: ['#a8dadc','#caf0f8','#e0f7fa','#ffffff','#90e0ef'],
+  },
+  {
+    name: 'Tropical',
+    emoji: ['🌴','🍍','🦜','🌺','🐠','🦀','🌊','☀️','🍹','🐚','🦋','🌸'],
+    bg: ['#003d1f','#006b3c','#009150'],
+    colors: ['#ffcc00','#ff6b35','#ff9f1c','#2ec4b6','#cbf3f0'],
+  },
+
+  // ── Fantasy & Sci-Fi ──
+  {
+    name: 'Robots',
+    emoji: ['🤖','⚙️','🔧','🦾','🦿','💡','🔋','📡','🛠️','💻','🕹️','⚡'],
+    bg: ['#0f0f1a','#1a1a2e','#16213e'],
+    colors: ['#00d4ff','#0099cc','#7b2fff','#00ff88','#ff6b00'],
+  },
+  {
+    name: 'Retro Gaming',
+    emoji: ['👾','🕹️','🎮','👻','🍄','⭐','💣','🏆','❤️','🔫','🪙','🎯'],
+    bg: ['#000000','#0d0d0d','#1a0033'],
+    colors: ['#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff'],
+  },
+  {
+    name: 'Aliens',
+    emoji: ['👽','🛸','🌍','🔭','💫','🌌','☄️','🪐','🤖','👾','🚀','⭐'],
+    bg: ['#000d1a','#001a33','#00264d'],
+    colors: ['#00ff88','#39ff14','#7fff00','#ccff00','#80ff00'],
+  },
+  {
+    name: 'Mythical',
+    emoji: ['🐉','🦄','🧜','🦅','🦁','🐺','🦊','🧚','🔮','⚡','🌊','🔥'],
+    bg: ['#1a0040','#2d006b','#3d0080'],
+    colors: ['#9b5de5','#f15bb5','#fee440','#00bbf9','#00f5d4'],
+  },
+  {
+    name: 'Gems',
+    emoji: ['💎','💍','🔮','✨','⭐','🌟','💫','🪩','🏆','👑','🌈','💠'],
+    bg: ['#0a0015','#12002a','#1e003f'],
+    colors: ['#ff6ec7','#a855f7','#60a5fa','#34d399','#fbbf24'],
+  },
+  {
+    name: 'Medieval',
+    emoji: ['🏰','⚔️','🛡️','🐉','👑','🏹','🪄','⚗️','🗝️','🔱','🎭','🌙'],
+    bg: ['#1a0a00','#2d1400','#40200a'],
+    colors: ['#c9a84c','#e8c96e','#f5d88a','#a0522d','#8b4513'],
+  },
+  {
+    name: 'Horror',
+    emoji: ['👻','🎃','💀','🕷️','🕸️','🦇','🩸','🔪','⚰️','🌑','🌫️','🖤'],
+    bg: ['#0a0000','#150000','#200000'],
+    colors: ['#800000','#b30000','#ff0000','#4a0404','#cc3333'],
+  },
+
+  // ── Human World ──
+  {
+    name: 'Theater',
+    emoji: ['🎭','🎬','🎤','💃','🕺','🎪','🌹','👏','🎶','✨','🪄','🎠'],
+    bg: ['#1a0020','#2d003a','#400054'],
+    colors: ['#e040fb','#ea80fc','#f48fb1','#f8bbd9','#fce4ec'],
+  },
+  {
+    name: 'Circus',
+    emoji: ['🎪','🤹','🎠','🎡','🎢','🎭','🤡','🦁','🐘','🎶','✨','🎯'],
+    bg: ['#3d0000','#5c0a0a','#7a1010'],
+    colors: ['#ff1744','#ffea00','#00e5ff','#76ff03','#ff9100'],
+  },
+  {
+    name: 'Japanese',
+    emoji: ['🍣','🗾','⛩️','🎎','🌸','🍡','🀄','🎏','🏯','🎍','🦊','🌊'],
+    bg: ['#1a0010','#33001f','#4d002f'],
+    colors: ['#ff6b9d','#ff4081','#f06292','#f8bbd9','#fce4ec'],
+  },
+  {
+    name: 'Art',
+    emoji: ['🎨','🖌️','✏️','📐','🖼️','🎭','🌈','✨','💡','🎭','🪄','🌟'],
+    bg: ['#1a1100','#332200','#4d3300'],
+    colors: ['#ff6b35','#f7c59f','#efefd0','#004e89','#1a936f'],
+  },
+  {
+    name: 'Fashion',
+    emoji: ['👗','👠','👜','💄','💍','👒','🕶️','👑','💎','🌸','✨','🦋'],
+    bg: ['#2d001a','#4a0029','#660038'],
+    colors: ['#ff69b4','#ff85c2','#ffb3d1','#ffd6e8','#fff0f6'],
+  },
+  {
+    name: 'City',
+    emoji: ['🏙️','🌆','🌇','🚇','🚕','🌃','🎆','🏢','🌉','🚦','🏪','🌁'],
+    bg: ['#0a0a1a','#111127','#1a1a3e'],
+    colors: ['#ffd700','#ffa500','#ff6347','#00bfff','#7b68ee'],
+  },
+  {
+    name: 'Travel',
+    emoji: ['✈️','🗺️','🗼','🗽','🏰','🌍','🧳','📸','🌅','🏖️','🎡','🌄'],
+    bg: ['#001a33','#002a52','#003d70'],
+    colors: ['#00a8e8','#007ea7','#003459','#f2a365','#e8d5b7'],
+  },
+
+  // ── Fun & Quirky ──
+  {
+    name: 'Desserts',
+    emoji: ['🍦','🧁','🎂','🍰','🍩','🍪','🍫','🍬','🍭','🧇','🥐','🍮'],
+    bg: ['#3d0030','#5c0045','#7a0060'],
+    colors: ['#ff85a1','#ffa8b8','#ffc8d3','#ffe0e8','#fff0f4'],
+  },
+  {
+    name: 'Toys',
+    emoji: ['🧸','🎮','🎲','🪆','🎯','🎠','🤖','🪀','🎪','🧩','🪁','🎨'],
+    bg: ['#001a4d','#002b80','#0033aa'],
+    colors: ['#ff4444','#ffbb00','#44dd44','#4488ff','#ff44ff'],
+  },
+  {
+    name: 'Love',
+    emoji: ['❤️','💕','💖','💗','💝','🌹','💌','💑','💏','🥰','😍','💋'],
+    bg: ['#2d0014','#4a0022','#660030'],
+    colors: ['#ff4d6d','#ff758f','#ff8fa3','#ffb3c1','#ffd6e0'],
+  },
+  {
+    name: 'Holidays',
+    emoji: ['🎃','🎄','🎅','🤶','🎆','🎇','🎑','🏮','🎋','🎍','🎎','🎏'],
+    bg: ['#003300','#004d00','#006600'],
+    colors: ['#ff0000','#ffcc00','#00cc00','#0066ff','#ff6600'],
+  },
+
+  // ── Moods / Abstract ──
+  {
+    name: 'Emotions',
+    emoji: ['😂','😭','😍','🤩','😡','😱','🥳','😴','🤔','😎','🥺','😤'],
+    bg: ['#1a1400','#332800','#4d3c00'],
+    colors: ['#ffd700','#ffcc00','#ffb700','#ffa500','#ff8c00'],
+  },
+  {
+    name: 'Elements',
+    emoji: ['🔥','💧','🌊','⚡','🌪','🌍','🪨','❄️','☁️','🌈','💨','✨'],
+    bg: ['#0d001a','#1a0033','#260040'],
+    colors: ['#ff4500','#1e90ff','#32cd32','#ffd700','#9400d3'],
+  },
+  {
+    name: 'Dreams',
+    emoji: ['💭','🌙','⭐','🦋','🌈','✨','💫','🌸','🔮','🌌','🌊','🪄'],
+    bg: ['#0d0033','#1a0066','#260099'],
+    colors: ['#b388ff','#ea80fc','#80d8ff','#ccff90','#ffd740'],
+  },
+  {
+    name: 'Gothic',
+    emoji: ['🖤','💀','🕷️','🌑','🦇','🥀','⚰️','🔮','🪦','🌫️','🖤','🌙'],
+    bg: ['#050505','#0a0a0a','#0f0010'],
+    colors: ['#4a0080','#6600b3','#8000ff','#9933ff','#b366ff'],
+  },
+  {
+    name: 'Science',
+    emoji: ['🔬','🧬','⚗️','🔭','💡','🧪','🧫','🧲','⚡','🌡️','🔋','💻'],
+    bg: ['#001a33','#002952','#003d70'],
+    colors: ['#00e5ff','#00b8d4','#0091ea','#304ffe','#6200ea'],
+  },
+  {
+    name: 'Medicine',
+    emoji: ['💊','🩺','🏥','🩻','💉','🩹','🧬','❤️','🦷','🧠','👁️','🫀'],
+    bg: ['#001a1a','#003333','#004d4d'],
+    colors: ['#00bcd4','#26c6da','#4dd0e1','#80deea','#b2ebf2'],
+  },
+];
+
+
+function getLevelTheme(level) {
+  return LEVEL_THEMES[(level - 1) % LEVEL_THEMES.length];
+}
+
+// ─── PHOTO GENERATION ────────────────────────────────────────────────────────
+// Picks one of 1.jpg–10.jpg for the level. Each level gets a consistent pick
+// (same level always uses same jpg), cycling through all 10 images.
+function getLevelJpg(level) {
+  return ((level - 1) % 10 + 1) + '.jpg';
+}
+
+async function generateLevelImage(level, cols, rows, patternComplexity) {
+  const TILE_PX = 120;
+  const canvasW = cols * TILE_PX;
+  const canvasH = rows * TILE_PX;
+
+  const jpgFile = getLevelJpg(level);
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // Draw the jpg scaled/cropped to fill the grid canvas (cover behaviour)
+      const canvas = document.createElement('canvas');
+      canvas.width  = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+
+      const scaleX = canvasW / img.width;
+      const scaleY = canvasH / img.height;
+      const scale  = Math.max(scaleX, scaleY);
+      const drawW  = img.width  * scale;
+      const drawH  = img.height * scale;
+      const offsetX = (canvasW - drawW) / 2;
+      const offsetY = (canvasH - drawH) / 2;
+
+      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    img.onerror = () => {
+      // Fallback: solid dark rect if jpg is missing
+      const canvas = document.createElement('canvas');
+      canvas.width  = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#1c1c28';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = jpgFile;
+  });
+}
+
+
+// Extract a specific tile from the full image
+function extractTile(fullImageDataUrl, row, col, cols, rows) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const tileW = img.width  / cols;
+      const tileH = img.height / rows;
+      const canvas = document.createElement('canvas');
+      canvas.width  = tileW;
+      canvas.height = tileH;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, col * tileW, row * tileH, tileW, tileH, 0, 0, tileW, tileH);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = fullImageDataUrl;
+  });
+}
+
+// ─── TIMER ────────────────────────────────────────────────────────────────────
+// Seconds allowed per level. Scales with grid size & tile count.
+
+let timerInterval = null;
+let timerSecondsLeft = 0;
+let timerTotalSeconds = 0;
+
+const CIRCUMFERENCE = 2 * Math.PI * 23; // r=23
+
+function startTimer(seconds) {
+  clearInterval(timerInterval);
+  timerSecondsLeft = seconds;
+  timerTotalSeconds = seconds;
+  renderTimer(true);
+  timerInterval = setInterval(() => {
+    timerSecondsLeft--;
+    renderTimer();
+    if (timerSecondsLeft === 5) {
+      enterPanicMode();
+    }
+    if (timerSecondsLeft <= 0) {
+      clearInterval(timerInterval);
+      onTimerExpired();
+    }
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+function addTime(seconds) {
+  // Always add the full amount — no cap at timerTotalSeconds
+  // Only cap at a generous ceiling (timerTotalSeconds + 120) to prevent absurd values
+  timerSecondsLeft = Math.min(timerSecondsLeft + seconds, timerTotalSeconds + 120);
+  // If we were in panic mode and now have > 5s, exit panic
+  if (inPanicMode && timerSecondsLeft > 5) {
+    inPanicMode = false;
+    const ring = document.getElementById('timerRing');
+    ring.classList.remove('danger-pulse');
+    // Silence panic music
+    if (panicGain && audioCtx) {
+      panicGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.15);
+      setTimeout(() => { try { panicGain.disconnect(); } catch(e) {} panicGain = null; }, 300);
+    }
+    // Restore BGM gain (it's been running silently)
+    if (bgmGain && audioCtx) {
+      bgmGain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.2);
+    }
+  }
+  renderTimer();
+  showTimeBonusAnimation(seconds);
+}
+
+function showTimeBonusAnimation(seconds) {
+  const ring = document.getElementById('timerRing');
+  const arc  = document.getElementById('timerArc');
+  const rect = ring.getBoundingClientRect();
+
+  // Flash arc green
+  const prevClass = arc.className;
+  arc.style.stroke = '#4ade80';
+  arc.style.filter = 'drop-shadow(0 0 6px #4ade80)';
+  setTimeout(() => { arc.style.stroke = ''; arc.style.filter = ''; }, 600);
+
+  // Floating label
+  const el = document.createElement('div');
+  el.className = 'time-bonus-pop';
+  el.textContent = `+${seconds}s`;
+  el.style.left = (rect.left + rect.width / 2) + 'px';
+  el.style.top  = (rect.top) + 'px';
+  document.body.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+}
+
+function renderTimer(snap = false) {
+  const arc    = document.getElementById('timerArc');
+  const num    = document.getElementById('timerNumber');
+  const ring   = document.getElementById('timerRing');
+  const ratio  = Math.max(0, timerSecondsLeft / timerTotalSeconds);
+  const offset = CIRCUMFERENCE * (1 - ratio);
+
+  if (snap) {
+    arc.style.transition = 'none';
+    // Force reflow so transition is truly off before setting value
+    arc.getBoundingClientRect();
+  } else {
+    arc.style.transition = 'stroke-dashoffset 0.9s linear, stroke 0.4s';
+  }
+
+  arc.style.strokeDasharray  = CIRCUMFERENCE;
+  arc.style.strokeDashoffset = offset;
+  num.textContent = timerSecondsLeft;
+
+  // State classes
+  const isWarn   = ratio <= 0.4 && ratio > 0.2;
+  const isDanger = ratio <= 0.2;
+
+  arc.className  = 'timer-ring-fill' + (isDanger ? ' danger' : isWarn ? ' warn' : '');
+  num.className  = 'timer-number'    + (isDanger ? ' danger' : isWarn ? ' warn' : '');
+  ring.className = 'timer-ring'      + (isDanger ? ' danger-pulse' : '');
+}
+
+function onTimerExpired() {
+  if (state.revealedTiles.size === state.totalTiles) return; // already won
+  showTimeUp();
+}
+
+function showTimeUp() {
+  stopMusic();
+  if (panicGain) { try { panicGain.disconnect(); } catch(e) {} panicGain = null; }
+  playGameOverSound();
+  document.getElementById('gameOverSub').textContent =
+    `Time's up on Level ${state.level}! Score: ${state.score} pts.`;
+  document.getElementById('gameOverOverlay').classList.add('active');
+}
+
+// ─── GAME STATE ───────────────────────────────────────────────────────────────
+let state = {
+  level: 1,
+  score: 0,
+  lives: 3,
+  cols: 2,
+  rows: 2,
+  gridSize: 2, // legacy alias = cols
+  revealedTiles: new Set(),
+  revealQueue: [],
+  currentTileIndex: 0,
+  fullImage: null,
+  tileImages: {},
+  totalTiles: 0,
+  isAnimating: false,
+};
+
+// ─── REWARDS ──────────────────────────────────────────────────────────────────
+const REWARDS = {
+  hint:      { emoji: '💡', label: 'Hint',        desc: 'Eliminate a wrong position', bg: '#fff9c4', glow: '#facc15', border: '#fde047' },
+  freeze:    { emoji: '⌛', label: 'Time Freeze', desc: '+30 seconds',                bg: '#cffafe', glow: '#22d3ee', border: '#67e8f9' },
+  shuffle:   { emoji: '🎲', label: 'Shuffle',     desc: 'Change current tile',        bg: '#ede9fe', glow: '#a78bfa', border: '#c4b5fd' },
+  fullheart: { emoji: '❤️', label: 'Full Heart',  desc: 'Restore all 3 lives',        bg: '#ffe4e6', glow: '#fb7185', border: '#fda4af' },
+};
+const REWARD_KEYS = Object.keys(REWARDS);
+
+let playerRewards = {}; // e.g. { hint: 2, freeze: 1 }
+
+function pickRandomReward() {
+  return REWARD_KEYS[Math.floor(Math.random() * REWARD_KEYS.length)];
+}
+
+function grantRandomReward() {
+  const key = pickRandomReward();
+  playerRewards[key] = (playerRewards[key] || 0) + 1;
+  renderRewardBar(key);
+  return key;
+}
+
+function grantRewardSilently(key) {
+  // Add to inventory and re-render bar WITHOUT pop animation
+  playerRewards[key] = (playerRewards[key] || 0) + 1;
+  renderRewardBar(key); // key passed so new one gets pop
+}
+
+function renderRewardBar(newKey = null) {
+  _renderRewardBarWith(playerRewards, newKey);
+}
+
+function renderRewardBarFromSnapshot(snapshot) {
+  _renderRewardBarWith(snapshot, null);
+}
+
+function _renderRewardBarWith(counts, newKey) {
+  const bar = document.getElementById('rewardBar');
+  if (!bar) return;
+  bar.innerHTML = '';
+
+  REWARD_KEYS.forEach(key => {
+    const count = counts[key] || 0;
+    const r     = REWARDS[key];
+    const empty = count === 0;
+
+    const btn = document.createElement('button');
+    btn.className = 'reward-btn' + (key === newKey ? ' popping' : '') + (empty ? ' reward-empty' : '');
+    btn.title = empty ? `${r.label}: none left` : `${r.label}: ${r.desc}`;
+    btn.disabled = empty;
+
+    if (empty) {
+      btn.style.background   = 'var(--surface)';
+      btn.style.borderColor  = 'rgba(255,255,255,0.08)';
+      btn.style.setProperty('--reward-glow', 'transparent');
+    } else {
+      btn.style.background   = r.bg;
+      btn.style.borderColor  = r.border;
+      btn.style.setProperty('--reward-glow', r.glow);
+    }
+
+    btn.innerHTML = `<span class="reward-emoji">${r.emoji}</span>`;
+
+    // Badge: only show count when > 1
+    if (count > 1) {
+      const badge = document.createElement('span');
+      badge.className = 'reward-count';
+      badge.style.color = r.glow;
+      badge.style.background = 'white';
+      badge.style.borderColor = 'currentColor';
+      badge.textContent = count;
+      btn.appendChild(badge);
+    }
+
+    if (!empty) btn.onclick = () => activateReward(key, btn);
+    bar.appendChild(btn);
+  });
+}
+
+function activateReward(key, btn) {
+  if (!playerRewards[key] || playerRewards[key] <= 0) return;
+  if (state.isAnimating) return;
+
+  playRewardActivationSound(key);
+
+  // Animate out
+  btn.classList.add('using');
+  setTimeout(() => {
+    playerRewards[key]--;
+    applyReward(key);
+    renderRewardBar();
+  }, 280);
+}
+
+function applyReward(key) {
+  switch (key) {
+    case 'hint':      applyHint();      break;
+    case 'freeze':    applyFreeze();    break;
+    case 'shuffle':   applyShuffle();   break;
+    case 'fullheart': applyFullHeart(); break;
+  }
+}
+
+function applyHint() {
+  const available = [...getAvailableTiles()];
+  const expected  = state.revealQueue[state.currentTileIndex];
+  const wrong     = available.filter(i => i !== expected);
+  if (wrong.length === 0) return;
+  const pick = wrong[Math.floor(Math.random() * wrong.length)];
+  const el = getTileEl(pick);
+  if (!el) return;
+  el.classList.remove('available');
+  el.classList.add('unavailable');
+  el.style.opacity = '0.25';
+  el.style.pointerEvents = 'none';
+  el.dataset.hinted = 'true';
+  showToast('💡 Hint used! One wrong spot eliminated.');
+}
+
+function applyFreeze() {
+  addTime(30);
+  showToast('⌛ Time Freeze! +30 seconds added.');
+}
+
+async function animateShuffleCascade() {
+  const belt  = document.getElementById('queueBelt');
+  const tiles = [...belt.querySelectorAll('.q-tile')];
+  if (tiles.length === 0) return;
+
+  // Hop each tile left-to-right with a staggered delay
+  const HOP_STAGGER = 70; // ms between each tile's hop
+  const HOP_DUR     = 320;
+
+  tiles.forEach((tile, i) => {
+    setTimeout(() => {
+      tile.classList.remove('shuffle-hop', 'shuffle-land');
+      // Force reflow so re-adding the class retriggers the animation
+      void tile.offsetWidth;
+      tile.classList.add('shuffle-hop');
+    }, i * HOP_STAGGER);
+  });
+
+  // Wait for all hops to finish
+  await sleep(tiles.length * HOP_STAGGER + HOP_DUR);
+
+  // Rebuild belt with new queue order, then land the new current tile
+  buildQueueBelt(false);
+
+  const newCurrent = belt.querySelector('.q-tile.is-current');
+  if (newCurrent) {
+    newCurrent.classList.add('shuffle-land');
+  }
+
+  await sleep(420);
+  updateAvailableStates();
+}
+
+function applyShuffle() {
+  const cur         = state.currentTileIndex;
+  const currentTile = state.revealQueue[cur];
+
+  const available = getAvailableTiles();
+
+  const candidates = [];
+  for (let i = cur + 1; i < state.totalTiles; i++) {
+    const t = state.revealQueue[i];
+    if (available.has(t)) candidates.push(i);
+  }
+
+  if (candidates.length === 0) {
+    showToast('No other tile to shuffle to!');
+    return;
+  }
+
+  // Prefer a tile different from the current one
+  const preferred = candidates.filter(i => state.revealQueue[i] !== currentTile);
+  const pool      = preferred.length > 0 ? preferred : candidates;
+
+  const swapIdx = pool[Math.floor(Math.random() * pool.length)];
+  [state.revealQueue[cur], state.revealQueue[swapIdx]] =
+    [state.revealQueue[swapIdx], state.revealQueue[cur]];
+
+  animateShuffleCascade();
+  showToast('🎲 New tile to place!');
+}
+
+function applyFullHeart() {
+  state.lives = 3;
+  updateLivesDisplay();
+  showToast('❤️ Full Heart! All lives restored.');
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'reward-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+
+  // Position vertically centered on the reward bar
+  const rewardBar = document.getElementById('rewardBar');
+  if (rewardBar) {
+    const rect = rewardBar.getBoundingClientRect();
+    const barCenter = rect.top + rect.height / 2;
+    t.style.top = barCenter + 'px';
+    t.style.transform = 'translateX(-50%) translateY(-50%) translateY(10px)';
+    t.style.setProperty('--visible-transform', 'translateX(-50%) translateY(-50%)');
+  } else {
+    t.style.bottom = '140px';
+  }
+
+  requestAnimationFrame(() => t.classList.add('visible'));
+  setTimeout(() => {
+    t.classList.remove('visible');
+    setTimeout(() => t.remove(), 400);
+  }, 2200);
+}
+
+// ─── WAVE DIFFICULTY ──────────────────────────────────────────────────────────
+// Wave cycle = 6 levels. Pattern within each cycle (1-indexed position):
+//   pos 1: easy entry      pos 4: hard climb
+//   pos 2: mild climb      pos 5: PEAK (hardest in cycle, reward on complete)
+//   pos 3: medium          pos 6: VALLEY (breather, generous time/preview)
+// Each full cycle the baseline floor rises slowly.
+// Level 1 is always a 2×2 warmup. Peaks grow harder each cycle rather than
+// always hitting max — 7×7 only appears at high cycle counts.
+
+const WAVE_CYCLE = 6;
+const SHAPE = [0.05, 0.15, 0.28, 0.44, 0.62, 0.12];
+
+function getLevelDifficulty(level) {
+  if (level === 1) return 0.0; // gentle 2×2 warmup
+  const cycle       = Math.floor((level - 1) / WAVE_CYCLE);
+  const pos         = ((level - 1) % WAVE_CYCLE) + 1;
+  const withinCycle = SHAPE[pos - 1];
+  const floor       = Math.min(cycle * 0.08, 0.45);
+  return floor + withinCycle * (1 - floor);
+}
+
+function isRewardLevel(level) {
+  const cycle = Math.floor((level - 1) / WAVE_CYCLE);
+  const pos   = ((level - 1) % WAVE_CYCLE) + 1;
+  // First cycle: every level is a reward (levels 1-6 are new, player needs encouragement)
+  if (cycle === 0) return level >= 2; // skip level 1 (warmup), reward from level 2 onward
+  // Later cycles: reward at pos 2 (mild climb), pos 4 (hard climb), pos 5 (peak)
+  return pos === 2 || pos === 4 || pos === 5;
+}
+
+function isPeakLevel(level) {
+  return level > 1 && ((level - 1) % WAVE_CYCLE) + 1 === 5;
+}
+
+function isValleyLevel(level) {
+  return level > 1 && ((level - 1) % WAVE_CYCLE) + 1 === 6;
+}
+
+// cols: 2..5 (width-constrained on portrait phone)
+// rows: 2..8 (height can go taller on portrait phone)
+function getGridDimensions(level) {
+  const d    = getLevelDifficulty(level);
+  const cols = Math.min(5, Math.max(2, Math.round(2 + d * 3)));
+  const rows = Math.min(8, Math.max(2, Math.round(2 + d * 6)));
+  return { cols, rows };
+}
+
+// Pattern complexity follows the same wave shape as difficulty but with its own amplitude.
+// At easy levels (pos 1-2): pc is low → edge-bleeding emojis, many, clustered.
+// At peak levels (pos 5):   pc is high → centered emojis, few, spread, overlapping.
+function getPatternComplexity(level) {
+  return getLevelDifficulty(level); // same wave, keeps both dimensions in sync
+}
+
+function getLevelTime(cols, rows, level) {
+  const d  = getLevelDifficulty(level);
+  const pc = getPatternComplexity(level);
+  const tiles = cols * rows;
+  // Base seconds per tile: easier patterns give less time (emojis help you place faster)
+  // Harder patterns give more time (harder to read, but not unfairly punishing)
+  const secsPerTile = 5.5 - d * 3.0 + pc * 2.5;
+  return Math.round(tiles * secsPerTile + 10);
+}
+
+function getQueuePreview(level) {
+  const d  = getLevelDifficulty(level);
+  const pc = getPatternComplexity(level);
+  // More preview at high pattern complexity (compensation for harder tiles)
+  return Math.min(5, Math.max(2, Math.round(5 - d * 2.0 + pc * 1.0)));
+}
+
+function getAdjacentIndices(idx, cols, rows) {
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
+  const adjacent = [];
+  if (row > 0)        adjacent.push((row-1)*cols + col);
+  if (row < rows-1)   adjacent.push((row+1)*cols + col);
+  if (col > 0)        adjacent.push(row*cols + (col-1));
+  if (col < cols-1)   adjacent.push(row*cols + (col+1));
+  return adjacent;
+}
+
+function getAvailableTiles() {
+  const available = new Set();
+  state.revealedTiles.forEach(idx => {
+    getAdjacentIndices(idx, state.cols, state.rows).forEach(a => {
+      if (!state.revealedTiles.has(a)) available.add(a);
+    });
+  });
+  return available;
+}
+
+// Generate a reveal queue: start from random tile, expand adjacently (BFS-like but shuffled)
+function generateRevealQueue(cols, rows) {
+  const total = cols * rows;
+  const startIdx = Math.floor(Math.random() * total);
+  const visited  = new Set([startIdx]);
+  const queue    = [startIdx];
+  const order    = [];
+  while (queue.length > 0) {
+    const idx = queue.shift();
+    order.push(idx);
+    const neighbors = getAdjacentIndices(idx, cols, rows)
+      .filter(n => !visited.has(n))
+      .sort(() => Math.random() - 0.5);
+    neighbors.forEach(n => { visited.add(n); queue.push(n); });
+  }
+  return order;
+}
+
+// ─── RENDERING ────────────────────────────────────────────────────────────────
+const TILE_SIZE = 90;
+
+async function initLevel() {
+  const level = state.level;
+  const { cols, rows } = getGridDimensions(level);
+  state.cols = cols;
+  state.rows = rows;
+  state.gridSize = cols;
+  state.totalTiles = cols * rows;
+  state.revealedTiles = new Set();
+  state.lives = 3;
+  state.isAnimating = false;
+
+  // Hide game area immediately so the layout shift is invisible
+  const gameArea = document.querySelector('.game-area');
+  if (gameArea) { gameArea.style.opacity = '0'; gameArea.style.transition = 'none'; }
+
+  // Update UI labels
+  document.getElementById('levelNum').textContent = level;
+  const theme = getLevelTheme(level);
+  currentThemeName = theme.name;
+  updateLivesDisplay();
+
+  // Generate image — pattern complexity drives visual difficulty
+  const pc = getPatternComplexity(level);
+  state.patternComplexity = pc;
+  state.fullImage = await generateLevelImage(level, cols, rows, pc);
+
+  // Pre-extract all tile images
+  state.tileImages = {};
+  const extractPromises = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      extractPromises.push(
+        extractTile(state.fullImage, r, c, cols, rows).then(url => {
+          state.tileImages[idx] = url;
+        })
+      );
+    }
+  }
+  await Promise.all(extractPromises);
+
+  // Generate reveal order
+  state.revealQueue = generateRevealQueue(cols, rows);
+  state.currentTileIndex = 0;
+
+  // Build all UI synchronously so layout is fully computed before revealing
+  buildGrid(cols, rows);
+  updateProgress();
+  renderRewardBar();
+
+  // Wait one frame so the browser computes final layout with all elements in place
+  await new Promise(r => requestAnimationFrame(r));
+
+  // Now fade in smoothly — no visible shift
+  if (gameArea) {
+    gameArea.style.transition = 'opacity 0.25s ease';
+    gameArea.style.opacity = '1';
+  }
+
+  // Reveal first tile, then build queue (currentTileIndex=1 by then so belt shows correct tile)
+  await revealFirstTile();
+  updateNextTilePreview();
+  startTimer(getLevelTime(cols, rows, level));
+}
+
+function buildGrid(cols, rows) {
+  const grid = document.getElementById('grid');
+  const tileSize = getTileDisplaySize(cols, rows);
+  grid.style.gridTemplateColumns = `repeat(${cols}, ${tileSize}px)`;
+  grid.style.gridTemplateRows = `repeat(${rows}, ${tileSize}px)`;
+  grid.innerHTML = '';
+
+  for (let i = 0; i < cols * rows; i++) {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.dataset.idx = i;
+    tile.style.width = tileSize + 'px';
+    tile.style.height = tileSize + 'px';
+
+    const inner = document.createElement('div');
+    inner.className = 'tile-inner';
+    inner.textContent = '○';
+    tile.appendChild(inner);
+
+    const img = document.createElement('img');
+    img.src = state.tileImages[i];
+    img.alt = '';
+    tile.appendChild(img);
+
+    // touchstart fires immediately on finger contact — required for vibration on mobile
+    tile.addEventListener('touchstart', () => {
+      if (!state.isAnimating &&
+          !state.revealedTiles.has(i) &&
+          state.currentTileIndex < state.totalTiles) {
+        const available = getAvailableTiles();
+        const expectedIdx = state.revealQueue[state.currentTileIndex];
+        if (available.has(i) && i !== expectedIdx) {
+          try { navigator.vibrate([80, 50, 80]); } catch(e) {}
+        }
+      }
+    }, { passive: true });
+
+    tile.addEventListener('click', () => handleTileClick(i));
+    grid.appendChild(tile);
+  }
+}
+
+async function revealFirstTile() {
+  const firstIdx = state.revealQueue[0];
+  state.revealedTiles.add(firstIdx);
+  state.currentTileIndex = 1;
+
+  const tileEl = getTileEl(firstIdx);
+  tileEl.classList.add('revealed');
+  tileEl.querySelector('img').style.opacity = '1';
+  tileEl.querySelector('img').style.transform = 'scale(1)';
+  await sleep(300);
+}
+
+function updateAvailableStates() {
+  const available = getAvailableTiles();
+  document.querySelectorAll('.tile').forEach(t => {
+    const idx = parseInt(t.dataset.idx);
+    // Clear any hint styling so tiles become fully interactive again
+    if (t.dataset.hinted) {
+      t.style.opacity = '';
+      t.style.pointerEvents = '';
+      delete t.dataset.hinted;
+    }
+    t.classList.remove('available', 'unavailable');
+    if (!state.revealedTiles.has(idx)) {
+      if (available.has(idx)) {
+        t.classList.add('available');
+      } else {
+        t.classList.add('unavailable');
+      }
+    }
+  });
+}
+
+// Queue preview count is now wave-aware — see getQueuePreview(level)
+function getCurrentQueuePreview() {
+  return getQueuePreview(state.level);
+}
+
+function getTileDisplaySize(cols, rows) {
+  const appEl  = document.getElementById('app');
+  const appW   = appEl ? appEl.clientWidth : Math.min(window.innerWidth, 430);
+
+  // Fixed heights (always present):
+  //   header: 52px, progress bar: 4px, reward bar: 62px (always reserved),
+  //   queue section: queueTile + 28px, gaps: 6px * 4 = 24px, bottom pad: 8px
+  const queueTile = Math.min(Math.max(Math.floor(appW / cols * 0.9), 50), 90);
+  const fixedH    = 52 + 4 + 62 + (queueTile + 48) + 40;
+
+  const availH = (window.innerHeight - fixedH) / rows;
+  const availW = (appW - 6) / cols;
+
+  return Math.max(Math.floor(Math.min(availH, availW)), 28);
+}
+
+function appOuter() {
+  return window.innerHeight;
+}
+
+function buildQueueBelt(growing = false) {
+  const belt = document.getElementById('queueBelt');
+  const { cols, rows } = state;
+  const tileBase    = getTileDisplaySize(cols, rows);
+  const currentSize = Math.min(Math.max(Math.round(tileBase * 1.2), 52), 90);
+  const smallSize   = Math.round(currentSize * 0.65);
+  const scaleFrom = (smallSize / currentSize).toFixed(4);
+
+  belt.innerHTML = '';
+
+  for (let slot = getCurrentQueuePreview(); slot >= 0; slot--) {
+    const queuePos = state.currentTileIndex + slot;
+    const isCurrentSlot = slot === 0;
+    // All tiles rendered at their true pixel size — scale handles visual grow
+    const size = isCurrentSlot ? currentSize : smallSize;
+
+    const div = document.createElement('div');
+    div.style.width        = size + 'px';
+    div.style.height       = size + 'px';
+    div.style.borderRadius = '10px';
+    div.style.overflow     = 'hidden';
+    div.style.flexShrink   = '0';
+    div.style.transformOrigin = 'bottom center';
+
+    if (isCurrentSlot) {
+      div.className = 'q-tile is-current' + (growing ? ' growing' : '');
+      if (growing) {
+        div.style.setProperty('--scale-from', scaleFrom);
+      }
+      div.style.boxShadow = '0 0 0 2.5px var(--accent), 0 0 28px rgba(232,255,71,0.3)';
+    } else {
+      div.className = 'q-tile is-next';
+    }
+
+    const img = document.createElement('img');
+    img.style.display    = 'block';
+    img.style.width      = '100%';
+    img.style.height     = '100%';
+    img.style.objectFit  = 'cover';
+    if (queuePos < state.totalTiles) {
+      img.src = state.tileImages[state.revealQueue[queuePos]];
+    } else {
+      div.style.background = 'var(--surface)';
+      div.style.opacity    = '0.1';
+    }
+    div.appendChild(img);
+    belt.appendChild(div);
+  }
+}
+
+async function slideQueueBelt() {
+  const belt = document.getElementById('queueBelt');
+  const { cols, rows } = state;
+  const tileBase    = getTileDisplaySize(cols, rows);
+  const currentSize = Math.min(Math.max(Math.round(tileBase * 1.2), 52), 90);
+  const smallSize   = Math.round(currentSize * 0.65);
+  const DURATION = 400;
+
+  // Calculate how far the belt needs to slide: one small-tile-width + gap
+  const slideFrom = smallSize + 10;
+
+  // Set CSS variable for the keyframe animation
+  belt.style.setProperty('--slide-from', slideFrom + 'px');
+
+  // Rebuild belt content (new current tile starts at smallSize due to growing=true)
+  buildQueueBelt(true);
+
+  // Trigger both animations simultaneously on next frame
+  requestAnimationFrame(() => {
+    belt.classList.add('animating');
+  });
+
+  await sleep(DURATION + 50);
+
+  // Clean up: remove animation class, lock sizes in place
+  belt.classList.remove('animating');
+
+  // Re-render at final state (current tile at full size, no grow animation)
+  buildQueueBelt(false);
+
+  // Only now mark which tiles are available — after animation is fully done
+  updateAvailableStates();
+}
+
+function updateNextTilePreview(animate = false) {
+  if (state.currentTileIndex >= state.totalTiles) return;
+
+  if (animate) {
+    // updateAvailableStates is called inside slideQueueBelt after animation ends
+    slideQueueBelt();
+  } else {
+    buildQueueBelt();
+    updateAvailableStates();
+  }
+}
+
+function updateProgress() {
+  const pct = (state.revealedTiles.size / state.totalTiles) * 100;
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+function updateLivesDisplay() {
+  const div = document.getElementById('livesDisplay');
+  div.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const heart = document.createElement('div');
+    heart.className = 'heart' + (i >= state.lives ? ' lost' : '');
+    heart.id = `heart${i}`;
+    heart.innerHTML = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="${i < state.lives ? '#ff6b6b' : '#333'}"/>
+    </svg>`;
+    div.appendChild(heart);
+  }
+}
+
+function getTileEl(idx) {
+  return document.querySelector(`.tile[data-idx="${idx}"]`);
+}
+
+// ─── GAME LOGIC ───────────────────────────────────────────────────────────────
+async function handleTileClick(clickedIdx) {
+  if (isTransitioning) return;
+  if (state.isAnimating) return;
+  if (state.revealedTiles.has(clickedIdx)) return;
+  if (state.currentTileIndex >= state.totalTiles) return;
+
+  const available = getAvailableTiles();
+  if (!available.has(clickedIdx)) {
+    // Not adjacent — soft ignore or mild feedback
+    const tileEl = getTileEl(clickedIdx);
+    tileEl.style.transform = 'scale(0.97)';
+    setTimeout(() => tileEl.style.transform = '', 200);
+    return;
+  }
+
+  const expectedIdx = state.revealQueue[state.currentTileIndex];
+
+  if (clickedIdx === expectedIdx) {
+    // CORRECT
+    state.isAnimating = true;
+    playCorrectSound();
+    const tileEl = getTileEl(clickedIdx);
+    tileEl.classList.add('flash-correct');
+    tileEl.classList.add('revealed');
+    tileEl.classList.remove('available');
+    tileEl.querySelector('img').style.opacity = '1';
+    tileEl.querySelector('img').style.transform = 'scale(1)';
+    state.revealedTiles.add(clickedIdx);
+    state.currentTileIndex++;
+    state.score += 100 + (state.level * 10);
+
+    updateProgress();
+
+    if (state.revealedTiles.size === state.totalTiles) {
+      // Last tile — clear belt immediately so no "remaining tile" flicker
+      document.getElementById('queueBelt').innerHTML = '';
+      await sleep(400);
+      tileEl.classList.remove('flash-correct');
+      await sleep(100);
+      state.isAnimating = false;
+      isTransitioning = false;
+      await showLevelComplete();
+      return; // ← early return: never fall through to isAnimating=false below
+    } else {
+      addTime(5);
+      updateNextTilePreview(true);
+      await sleep(420);
+      tileEl.classList.remove('flash-correct');
+      state.isAnimating = false;
+    }
+  } else {
+    // WRONG
+    playWrongSound();
+    state.isAnimating = true;
+    const tileEl = getTileEl(clickedIdx);
+    tileEl.classList.add('flash-wrong');
+    state.lives--;
+    updateLivesDisplay();
+
+    // Shake the lost heart
+    const heartEl = document.getElementById(`heart${state.lives}`);
+    if (heartEl) { heartEl.classList.add('shake'); setTimeout(() => heartEl.classList.remove('shake'), 400); }
+
+    await sleep(500);
+    tileEl.classList.remove('flash-wrong');
+
+    if (state.lives <= 0) {
+      await sleep(200);
+      showGameOver();
+    }
+    state.isAnimating = false;
+  }
+}
+
+// ─── OVERLAYS ─────────────────────────────────────────────────────────────────
+async function showLevelComplete() {
+  if (isTransitioning) return; // prevent concurrent calls
+  stopTimer();
+  stopMusic();
+
+  if (timerSecondsLeft <= 5 && timerSecondsLeft > 0) {
+    playIAmSaved();
+  } else {
+    playVictorySound();
+  }
+
+  const preview = document.getElementById('completedPreview');
+  const sub     = document.getElementById('levelCompleteSub');
+  const overlay = document.getElementById('levelCompleteOverlay');
+  if (!preview || !sub || !overlay) return; // DOM not ready — bail safely
+
+  const { cols, rows } = state;
+  const MAX_W = 220, MAX_H = 280;
+  const tileW    = Math.floor(Math.min(MAX_W / cols, MAX_H / rows));
+  const previewW = tileW * cols + 2 * (cols - 1);
+  const previewH = tileW * rows + 2 * (rows - 1);
+
+  preview.style.gridTemplateColumns = `repeat(${cols}, ${tileW}px)`;
+  preview.style.gridTemplateRows    = `repeat(${rows}, ${tileW}px)`;
+  preview.style.width  = previewW + 'px';
+  preview.style.height = previewH + 'px';
+  preview.innerHTML = '';
+
+  for (let i = 0; i < state.totalTiles; i++) {
+    const img = document.createElement('img');
+    img.src = state.tileImages[i];
+    preview.appendChild(img);
+  }
+
+  const { cols: nextCols, rows: nextRows } = getGridDimensions(state.level + 1);
+  const nextTheme   = getLevelTheme(state.level + 1);
+  const nextIsPeak  = isPeakLevel(state.level + 1);
+  const nextIsValley = isValleyLevel(state.level + 1);
+  const nextLabel   = nextIsPeak ? ' · 🔥 Peak ahead!' : nextIsValley ? ' · 😌 Breather next' : '';
+  sub.textContent   = `Score: ${state.score} pts  ·  Next: ${nextTheme.emoji[0]} ${nextTheme.name} · ${nextCols}×${nextRows}${nextLabel}`;
+
+  overlay.classList.add('active');
+}
+
+function showGameOver() {
+  stopTimer();
+  stopMusic();
+  if (panicGain) { try { panicGain.disconnect(); } catch(e) {} panicGain = null; }
+  playGameOverSound();
+  document.getElementById('gameOverSub').textContent =
+    `You reached Level ${state.level} with ${state.score} points.`;
+  document.getElementById('gameOverOverlay').classList.add('active');
+}
+
+function hideOverlays() {
+  document.querySelectorAll('.overlay').forEach(o => {
+    if (o.id !== 'interstitialAdOverlay') o.classList.remove('active');
+  });
+}
+
+function saveLevel(val) {
+  try { localStorage.setItem('puzzland_level', val); } catch(e) {}
+}
+function loadLevel() {
+  try { return Math.max(1, parseInt(localStorage.getItem('puzzland_level')) || 1); } catch(e) { return 1; }
+}
+
+async function startGame() {
+  isTransitioning = false;
+  stopTimer();
+  state.level = loadLevel();
+  state.score = 0;
+  playerRewards = {};
+  hideOverlays();
+  await initLevel();
+  renderRewardBar();
+  startMusic();
+}
+
+let isTransitioning = false;
+
+async function nextLevel() {
+  if (isTransitioning) return;
+  isTransitioning = true;
+
+  const nextBtn = document.getElementById('nextLevelBtn');
+  if (nextBtn) nextBtn.disabled = true;
+
+  try {
+    const prevLevel = state.level;
+    state.level++;
+    saveLevel(state.level);
+    hideOverlays();
+    stopMusic();
+
+    if (shouldShowInterstitial(prevLevel)) {
+      await showInterstitialAd();
+    }
+
+    await initLevel();
+    renderRewardBar();
+    startMusic();
+
+    if (isRewardLevel(prevLevel)) {
+      stopTimer();
+      const rewardsSnapshot = { ...playerRewards };
+      const rewarded = pickRandomReward();
+      await showRewardReveal(rewarded, rewardsSnapshot);
+      startTimer(timerSecondsLeft);
+    }
+  } catch(e) {
+    console.error('nextLevel error:', e);
+  } finally {
+    isTransitioning = false;
+    if (nextBtn) nextBtn.disabled = false;
+  }
+}
+
+function restartGame() {
+  document.getElementById('restartConfirmOverlay').classList.add('active');
+}
+
+function hideRestartConfirm() {
+  document.getElementById('restartConfirmOverlay').classList.remove('active');
+}
+
+function confirmRestart() {
+  hideRestartConfirm();
+  saveLevel(1);
+  startGame();
+}
+
+// ─── INTERSTITIAL AD ─────────────────────────────────────────────────────────
+// Option A: show at valley (pos 6) AND every other peak (pos 5, alternating cycles)
+
+let _interstitialResolve = null;
+let _interstitialTick    = null;
+let _interstitialTimeout = null;
+
+function shouldShowInterstitial(level) {
+  if (level <= 1) return false;
+  const pos = ((level - 1) % WAVE_CYCLE) + 1;
+  // Every peak (pos 5) and every valley (pos 6)
+  return pos === 3 || pos === 5 || pos === 6;
+}
+
+function showInterstitialAd() {
+  return new Promise(resolve => {
+    _interstitialResolve = resolve;
+
+    const overlay   = document.getElementById('interstitialAdOverlay');
+    const fill      = document.getElementById('interstitialTimerFill');
+    const countdown = document.getElementById('interstitialCountdown');
+    const skipBtn   = document.getElementById('interstitialSkipBtn');
+
+    // Reset
+    skipBtn.style.display = 'none';
+    countdown.textContent = '5';
+    fill.style.animation  = 'none';
+    fill.getBoundingClientRect();
+    fill.style.animation  = 'adDrain 5s linear forwards';
+
+    overlay.classList.add('active');
+
+    let t = 5;
+    _interstitialTick = setInterval(() => {
+      t--;
+      countdown.textContent = Math.max(t, 0);
+      if (t <= 0) {
+        clearInterval(_interstitialTick);
+        _interstitialTick = null;
+        skipBtn.style.display = 'block';
+        countdown.textContent = 'Ready!';
+      }
+    }, 1000);
+
+    _interstitialTimeout = setTimeout(() => {
+      skipInterstitialAd();
+    }, 5500);
+  });
+}
+
+function skipInterstitialAd() {
+  clearInterval(_interstitialTick);
+  clearTimeout(_interstitialTimeout);
+  _interstitialTick    = null;
+  _interstitialTimeout = null;
+  document.getElementById('interstitialAdOverlay').classList.remove('active');
+  if (_interstitialResolve) { _interstitialResolve(); _interstitialResolve = null; }
+}
+
+async function restartLevel() {
+  hideOverlays();
+  stopMusic();
+  await initLevel();
+  renderRewardBar();
+  startMusic();
+}
+
+async function showRewardedAd() {
+  // Hide game over, show ad overlay
+  document.getElementById('gameOverOverlay').classList.remove('active');
+  const adOverlay = document.getElementById('adOverlay');
+  adOverlay.classList.add('active');
+
+  // Reset drain bar animation
+  const fill = document.getElementById('adTimerFill');
+  fill.style.animation = 'none';
+  fill.getBoundingClientRect();
+  fill.style.animation = '';
+
+  // Countdown
+  const countdown = document.getElementById('adCountdown');
+  countdown.textContent = '3';
+  let t = 3;
+  const tick = setInterval(() => {
+    t--;
+    countdown.textContent = Math.max(t, 0);
+    if (t <= 0) clearInterval(tick);
+  }, 1000);
+
+  await sleep(3000);
+  clearInterval(tick);
+  adOverlay.classList.remove('active');
+
+  // Restart level — no reward from ads, rewards come from completing peak levels
+  await restartLevel();
+}
+
+async function showRewardReveal(key, snapshot) {
+  const r = REWARDS[key];
+  // snapshot = rewards state BEFORE this new reward; may be undefined for non-ad grants
+  const oldCounts = snapshot ? { ...snapshot } : { ...playerRewards };
+
+  // ── 1. Show backdrop with big icon ──
+  const backdrop = document.createElement('div');
+  backdrop.className = 'reward-reveal-backdrop';
+  backdrop.innerHTML = `
+    <div class="reward-reveal-you-got">You <span>got</span> a reward! 🎁</div>
+    <div class="reward-reveal-card">
+      <div class="reward-reveal-icon" style="--reveal-glow:${r.glow}">${r.emoji}</div>
+      <div class="reward-reveal-label">${r.label}</div>
+      <div class="reward-reveal-desc">${r.desc}</div>
+    </div>
+    <div class="reward-reveal-sub">Collecting in 3s…</div>
+  `;
+  document.body.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add('visible'));
+  playRewardSound();
+
+  // ── 2. Render bar immediately with OLD state and keep it that way ──
+  _renderRewardBarWith(oldCounts, null);
+
+  // ── 3. Countdown ──
+  const sub = backdrop.querySelector('.reward-reveal-sub');
+  await sleep(1000); sub.textContent = 'Collecting in 2s…';
+  await sleep(1000); sub.textContent = 'Collecting in 1s…';
+  await sleep(1000);
+
+  // ── 4. Find or create a phantom fly target in the bar ──
+  const bar = document.getElementById('rewardBar');
+  let targetBtn = bar ? [...bar.querySelectorAll('.reward-btn')].find(b => b.title.startsWith(r.label)) : null;
+
+  if (!targetBtn) {
+    // Reward not in bar yet — append an invisible phantom as fly destination
+    const phantom = document.createElement('button');
+    phantom.className = 'reward-btn';
+    phantom.title = `${r.label}: ${r.desc}`;
+    phantom.style.cssText = `background:${r.bg}; border-color:${r.border}; opacity:0; transform:scale(0.5); pointer-events:none;`;
+    phantom.style.setProperty('--reward-glow', r.glow);
+    phantom.innerHTML = `<span class="reward-emoji">${r.emoji}</span>`;
+    if (bar) bar.appendChild(phantom);
+    targetBtn = phantom;
+  }
+  // Note: if reward already exists, keep it fully visible during the fly so the
+  // player sees their current count — it will update to new count on landing.
+
+  const startX = window.innerWidth / 2;
+  const startY = window.innerHeight / 2;
+  const tokenSize = 52;
+
+  // ── 5. Measure target position ──
+  const rect = targetBtn.getBoundingClientRect();
+  const endX = rect.left + rect.width / 2;
+  const endY = rect.top  + rect.height / 2;
+
+  // ── 6. Fade out backdrop ──
+  backdrop.style.opacity = '0';
+  await sleep(300);
+  backdrop.remove();
+
+  // ── 7. Create flying token ──
+  const token = document.createElement('div');
+  token.className = 'reward-fly-token';
+  token.style.cssText = `
+    width:${tokenSize}px; height:${tokenSize}px;
+    background:${r.bg}; border-color:${r.border};
+    font-size:1.6rem;
+    left:${startX - tokenSize/2}px;
+    top:${startY - tokenSize/2}px;
+  `;
+  token.textContent = r.emoji;
+  document.body.appendChild(token);
+
+  // ── 8. Animate curved arc ──
+  const cpX = startX + (endX - startX) * 0.1 + (endY > startY ? -120 : 120);
+  const cpY = startY + (endY - startY) * 0.3 - 80;
+  const duration = 700;
+  const startT = performance.now();
+
+  await new Promise(resolve => {
+    function frame(now) {
+      const t = Math.min((now - startT) / duration, 1);
+      const e = t * t * t;
+      const bx = (1-e)*(1-e)*startX + 2*(1-e)*e*cpX + e*e*endX;
+      const by = (1-e)*(1-e)*startY + 2*(1-e)*e*cpY + e*e*endY;
+      const scale = 1 - e * 0.3;
+      const opacity = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
+      token.style.left      = (bx - tokenSize/2) + 'px';
+      token.style.top       = (by - tokenSize/2) + 'px';
+      token.style.transform = `scale(${scale})`;
+      token.style.opacity   = opacity;
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        token.remove();
+        // ── 9. NOW grant reward and re-render bar with pop ──
+        playerRewards[key] = (playerRewards[key] || 0) + 1;
+        renderRewardBar(key);
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── MUSIC ────────────────────────────────────────────────────────────────────
+let musicPlaying = false;
+let isMuted = loadMuted();
+
+function saveMuted(val) {
+  try { localStorage.setItem('puzzland_muted', val); } catch(e) {}
+}
+function loadMuted() {
+  try { return localStorage.getItem('puzzland_muted') === 'true'; } catch(e) { return false; }
+}
+let loopTimeout  = null;
+let nextLoopTime = 0;
+let audioCtx     = null;
+let musicSynth   = null;
+let bgmGain      = null; // master gain for all BGM — zero this to silence instantly
+
+function noteToFreq(note) {
+  if (!note) return 0;
+  const names = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+  const acc = note[1] === '#' ? 1 : note[1] === 'b' ? -1 : 0;
+  const oct = parseInt(note[note.length - 1]);
+  const semi = (oct + 1) * 12 + names[note[0]] + acc;
+  return 440 * Math.pow(2, (semi - 69) / 12);
+}
+
+// ─── THEME MUSIC PROFILES ─────────────────────────────────────────────────────
+// Each theme: { bpm, style fn name, mood description }
+// Styles are generated inside initMusic and selected per theme name.
+
+let currentThemeName = 'Animals';
+
+function initMusic(actx) {
+  const master = actx.createGain();
+  master.gain.value = 0.25;
+  master.connect(actx.destination);
+  bgmGain = master;
+
+  const comp = actx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.knee.value = 6;
+  comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
+  comp.connect(master);
+
+  // Reverb
+  function makeReverb(secs, decay) {
+    const len = actx.sampleRate * secs;
+    const buf = actx.createBuffer(2, len, actx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decay);
+    }
+    const rv = actx.createConvolver(); rv.buffer = buf;
+    const rg = actx.createGain(); rg.gain.value = 0.13;
+    rv.connect(rg); rg.connect(comp);
+    return rv;
+  }
+  const rev = makeReverb(1.0, 2.5);
+
+  // ── Primitive voice builders ──────────────────────────────────────────────
+  const SR = actx.sampleRate;
+
+  function osc(type, freq, t, dur, vol, detune=0, target=comp) {
+    if (!freq) return;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq; o.detune.value = detune;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.setValueAtTime(vol * 0.8, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.98);
+    o.connect(g); g.connect(target);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  function filtOsc(type, freq, t, dur, vol, fStart, fEnd, Q=2, detune=0) {
+    if (!freq) return;
+    const o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq; o.detune.value = detune;
+    f.type = 'lowpass'; f.Q.value = Q;
+    f.frequency.setValueAtTime(fStart, t);
+    f.frequency.exponentialRampToValueAtTime(fEnd, t + Math.min(0.08, dur * 0.5));
+    f.frequency.exponentialRampToValueAtTime(fEnd * 0.5, t + dur * 0.9);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.012);
+    g.gain.setValueAtTime(vol * 0.75, t + dur * 0.65);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(f); f.connect(g); g.connect(comp); g.connect(rev);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  function noiseHit(t, dur, vol, hp=6000, bp=null) {
+    const buf = actx.createBuffer(1, Math.ceil(SR*dur), SR);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+    let node = src;
+    if (hp) { const f=actx.createBiquadFilter(); f.type='highpass'; f.frequency.value=hp; src.connect(f); node=f; }
+    if (bp) { const f=actx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=bp; f.Q.value=0.7; node.connect(f); node=f; }
+    node.connect(g); g.connect(master);
+    src.start(t); src.stop(t+dur+0.01);
+  }
+
+  function kick(t, startF=180, endF=45, dur=0.22, vol=0.85) {
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.frequency.setValueAtTime(startF,t); o.frequency.exponentialRampToValueAtTime(endF,t+0.07);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.02);
+  }
+
+  function clap(t, vol=0.2) {
+    for (let l=0;l<3;l++) noiseHit(t+l*0.007, 0.09, vol, null, 1200+l*300);
+  }
+
+  function hat(t, vol=0.06, open=false) {
+    noiseHit(t, open?0.15:0.03, vol, 8000);
+  }
+
+  function bell(freq, t, dur, vol) {
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='triangle'; o.frequency.value=freq;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(comp); g.connect(rev);
+    // harmonic sparkle
+    const o2=actx.createOscillator(), g2=actx.createGain();
+    o2.type='sine'; o2.frequency.value=freq*3; g2.gain.value=vol*0.12;
+    o2.connect(g2); g2.connect(g); o2.start(t); o2.stop(t+dur*0.5);
+    o.start(t); o.stop(t+dur+0.05);
+  }
+
+  function bassNote(freq, t, beats, bpm) {
+    const dur = beats * 60/bpm;
+    osc('sine', freq, t, dur, 0.45, 0, comp);
+    filtOsc('square', freq*2, t, dur*0.4, 0.15, 700, 180, 1);
+  }
+
+  // ── Shared drum patterns (reused across themes) ────────────────────────────
+  function fourFloor(startTime, bars, bpm) {
+    const B = 60/bpm, BAR = B*4;
+    for (let b=0;b<bars;b++) { const s=startTime+b*BAR; for(let i=0;i<4;i++) kick(s+i*B); }
+  }
+  function clapPattern(startTime, bars, bpm, beats=[1,3]) {
+    const B=60/bpm, BAR=B*4;
+    for(let b=0;b<bars;b++) { const s=startTime+b*BAR; beats.forEach(bi=>clap(s+bi*B)); }
+  }
+  function hatPattern(startTime, bars, bpm, div=8) {
+    const step=60/bpm*(4/div), BAR=60/bpm*4;
+    const steps=bars*div;
+    for(let i=0;i<steps;i++) hat(startTime+i*step, 0.055+(i%2)*0.02, i%(div/2)===div/4-1);
+  }
+
+  // ── THEME SCHEDULERS ──────────────────────────────────────────────────────
+  const THEMES = {
+
+    // 🐶 Animals — fun, bouncy, nature/acoustic feel (ukulele-ish plucks + woodblock)
+    Animals: (startTime) => {
+      const bpm=118, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Woodblock kick substitute
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        kick(s,120,70,0.12,0.5); kick(s+B*2,120,70,0.12,0.5);
+        noiseHit(s+B,0.06,0.18,3000,2000); noiseHit(s+B*3,0.06,0.18,3000,2000);
+        for(let i=0;i<8;i++) hat(s+i*B*0.5,0.04);
+      }
+      // Plucky ukulele-ish triangle arp — G pentatonic
+      const arp=['G4','B4','D5','G5','B5','D5','G4','B4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        arp.forEach((n,i)=>bell(noteToFreq(n),s+i*B*0.5,0.3,0.28));
+      }
+      // Melody — cheerful stepwise
+      const mel=[
+        {n:'G5',d:0.5},{n:'A5',d:0.5},{n:'B5',d:1},{n:'A5',d:0.5},{n:'G5',d:0.5},
+        {n:'D5',d:1},{n:'E5',d:0.5},{n:'G5',d:0.5},{n:'A5',d:1},{n:'G5',d:2},
+        {n:'B5',d:0.5},{n:'A5',d:0.5},{n:'G5',d:0.5},{n:'E5',d:0.5},{n:'D5',d:1},
+        {n:'G5',d:0.5},{n:'A5',d:0.5},{n:'B5',d:1},{n:'D6',d:2},{n:null,d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ bell(noteToFreq(n),t,d*B*0.85,0.45); t+=d*B; });
+      // Bass
+      ['G2','G2','C3','D3','G2','G2','C3','D3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🚗 Vehicles — robotic, mechanical, sequenced, industrial groove
+    Vehicles: (startTime) => {
+      const bpm=132, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Hard mechanical kick every beat
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        for(let i=0;i<4;i++) kick(s+i*B,220,50,0.18,0.9);
+        // metallic clank snare
+        noiseHit(s+B,0.05,0.35,4000,3500); noiseHit(s+B*3,0.05,0.35,4000,3500);
+        // 16th hat grid — very mechanical
+        for(let i=0;i<16;i++) noiseHit(s+i*B*0.25,0.02,i%4===0?0.1:0.04,9000);
+      }
+      // Square-wave sequenced arp — robotic beeps in D minor
+      const seq=['D4','F4','A4','C5','D4','A3','F4','C4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        seq.forEach((n,i)=>{
+          filtOsc('square',noteToFreq(n),s+i*B*0.5,B*0.4,0.2,300,1800,4);
+        });
+      }
+      // Robotic lead — square with filter
+      const rLead=[
+        {n:'D5',d:0.5},{n:'D5',d:0.25},{n:'F5',d:0.25},{n:'A5',d:1},{n:'C6',d:0.5},{n:'A5',d:0.5},
+        {n:'F5',d:1},{n:'E5',d:0.5},{n:'D5',d:0.5},{n:'C5',d:2},
+        {n:'A4',d:0.5},{n:'C5',d:0.5},{n:'D5',d:0.5},{n:'F5',d:0.5},{n:'A5',d:1},{n:'G5',d:1},{n:'F5',d:1},
+      ];
+      let t=startTime;
+      rLead.forEach(({n,d})=>{ filtOsc('square',noteToFreq(n),t,d*B*0.8,0.3,400,2000,5); t+=d*B; });
+      // Bass — chunky
+      ['D2','D2','A2','C3','D2','D2','F2','A2'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🌙 Space — ambient, floating, arpeggiated synths, sparse slow pulse
+    Space: (startTime) => {
+      const bpm=90, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Soft kick on 1 only
+      for(let b=0;b<BARS;b++) { kick(startTime+b*BAR,100,35,0.3,0.4); hat(startTime+b*BAR+B*2,0.04,true); }
+      // Shimmery pad chords — Cm7 space chords
+      const pads=[['C3','Eb3','G3','Bb3'],['Ab2','C3','Eb3','G3'],['Bb2','D3','F3','Ab3'],['G2','Bb2','D3','F3']];
+      pads.forEach((chord,ci)=>{
+        chord.forEach(n=>{ filtOsc('sawtooth',noteToFreq(n),startTime+ci*BAR*2,BAR*2*0.95,0.06,200,600,0.5); });
+      });
+      // Arp — flowing sixteenth triplet feel in C minor pentatonic
+      const arpNotes=['C4','Eb4','G4','Bb4','C5','Bb4','G4','Eb4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        arpNotes.forEach((n,i)=>{ filtOsc('triangle',noteToFreq(n),s+i*B*0.5,B*0.45,0.18,800,2000,1); });
+      }
+      // Melody — slow, haunting, floating
+      const mel=[
+        {n:'G5',d:2},{n:'Eb5',d:1},{n:'F5',d:1},{n:'G5',d:3},{n:null,d:1},
+        {n:'Bb5',d:1.5},{n:'G5',d:0.5},{n:'Eb5',d:1},{n:'D5',d:2},{n:'C5',d:3},{n:null,d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.9,0.22,300,1200,3); t+=d*B; });
+      // Deep space bass
+      ['C2','Ab2','Bb2','G2','C2','Ab2','Bb2','C3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🍕 Food — warm, upbeat, Latin/bossa feel with clave rhythm
+    Food: (startTime) => {
+      const bpm=110, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Clave pattern instead of straight 4-on-floor
+      const claveBeats=[0, 0.75, 1.5, 2.5, 3.5];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        claveBeats.forEach(cb=>noiseHit(s+cb*B,0.04,0.22,3500,2500));
+        kick(s,150,55,0.2,0.6); kick(s+B*2.5,150,55,0.2,0.5);
+        for(let i=0;i<8;i++) hat(s+i*B*0.5,0.04+(i%2)*0.02);
+      }
+      // Warm marimba-ish bells — F major
+      const marimba=['F4','A4','C5','F4','G4','Bb4','C5','A4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        marimba.forEach((n,i)=>bell(noteToFreq(n),s+i*B*0.5,0.4,0.22));
+      }
+      // Melody — happy, singable
+      const mel=[
+        {n:'F5',d:0.5},{n:'G5',d:0.5},{n:'A5',d:1},{n:'G5',d:0.5},{n:'F5',d:0.5},{n:'E5',d:1},
+        {n:'F5',d:0.5},{n:'A5',d:0.5},{n:'C6',d:1.5},{n:null,d:0.5},{n:'Bb5',d:1},{n:'A5',d:1},
+        {n:'G5',d:0.5},{n:'F5',d:0.5},{n:'G5',d:1},{n:'A5',d:0.5},{n:'G5',d:0.5},{n:'F5',d:2},{n:null,d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.85,0.28,500,2000,2); t+=d*B; });
+      ['F2','F2','Bb2','C3','F2','F2','Bb2','C3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🌸 Nature — delicate, flowing, Japanese koto-ish pentatonic
+    Nature: (startTime) => {
+      const bpm=96, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Very soft percussion
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        noiseHit(s,0.06,0.12,2000,1800); noiseHit(s+B*2,0.06,0.1,2000,1800);
+        for(let i=0;i<8;i++) hat(s+i*B*0.5,0.025+(i%4===2?0.02:0));
+      }
+      // Koto-ish pentatonic bells — E pentatonic: E G# B D# F#
+      const koto=['E4','G#4','B4','D#5','F#5','B4','G#4','E4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        koto.forEach((n,i)=>bell(noteToFreq(n),s+i*B*0.5,0.55,0.32));
+      }
+      // Flowing melody
+      const mel=[
+        {n:'B5',d:1},{n:'G#5',d:0.5},{n:'F#5',d:0.5},{n:'E5',d:2},{n:null,d:0.5},{n:'D#5',d:0.5},
+        {n:'F#5',d:1},{n:'G#5',d:1},{n:'B5',d:1.5},{n:'G#5',d:0.5},{n:'F#5',d:3},{n:null,d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ bell(noteToFreq(n),t,d*B*0.9,0.42); t+=d*B; });
+      ['E2','E2','A2','B2','E2','E2','A2','B2'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // ⚽ Sports — driving, energetic, stadium rock feel
+    Sports: (startTime) => {
+      const bpm=140, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        kick(s,200,50,0.2,1.0); kick(s+B*0.75,200,50,0.14,0.5);
+        kick(s+B*2,200,50,0.2,1.0); kick(s+B*2.5,200,50,0.14,0.5);
+        clap(s+B,0.3); clap(s+B*3,0.3);
+        for(let i=0;i<16;i++) hat(s+i*B*0.25,i%2===0?0.08:0.04,i%4===2);
+      }
+      // Power chords — distorted square
+      const power=[['A3','E4'],['F3','C4'],['G3','D4'],['A3','E4']];
+      power.forEach((ch,ci)=>{
+        const t=startTime+ci*BAR*2;
+        ch.forEach(n=>filtOsc('square',noteToFreq(n),t,BAR*2*0.9,0.12,200,800,1));
+        // 5th for power chord fatness
+        filtOsc('square',noteToFreq(ch[0])*.5,t,BAR*2*0.9,0.08,100,400,1);
+      });
+      // Energetic melody
+      const mel=[
+        {n:'A5',d:0.5},{n:'A5',d:0.25},{n:'B5',d:0.25},{n:'C6',d:1},{n:'B5',d:0.5},{n:'A5',d:0.5},
+        {n:'G5',d:1},{n:'E5',d:0.5},{n:'F5',d:0.5},{n:'A5',d:2},
+        {n:'C6',d:0.5},{n:'B5',d:0.5},{n:'A5',d:0.5},{n:'G5',d:0.5},{n:'F5',d:1},{n:'E5',d:1},{n:'D5',d:2},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.8,0.32,400,2200,4); t+=d*B; });
+      ['A2','F2','G2','A2','A2','F2','G2','A2'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // ☀️ Weather — bright, airy, synth-pop with gentle arpeggios
+    Weather: (startTime) => {
+      const bpm=122, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      fourFloor(startTime, BARS, bpm);
+      clapPattern(startTime, BARS, bpm);
+      hatPattern(startTime, BARS, bpm, 8);
+      // Airy pad — D major
+      [['D4','F#4','A4'],['G4','B4','D5'],['A4','C#5','E5'],['D4','F#4','A4']].forEach((ch,ci)=>{
+        ch.forEach(n=>filtOsc('sawtooth',noteToFreq(n),startTime+ci*BAR*2,BAR*2*0.95,0.06,300,700,0.5));
+      });
+      // Bright arp
+      const arpN=['D5','F#5','A5','D6','A5','F#5','D5','F#5'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        arpN.forEach((n,i)=>filtOsc('triangle',noteToFreq(n),s+i*B*0.5,B*0.42,0.16,600,2500,2));
+      }
+      // Sunny melody
+      const mel=[
+        {n:'D6',d:0.5},{n:'A5',d:0.5},{n:'F#5',d:1},{n:'G5',d:0.5},{n:'A5',d:0.5},{n:'D6',d:2},
+        {n:'E6',d:0.5},{n:'D6',d:0.5},{n:'A5',d:1},{n:'F#5',d:0.5},{n:'G5',d:0.5},{n:'A5',d:2},{n:null,d:1},
+        {n:'F#5',d:1},{n:'G5',d:1},{n:'A5',d:1},{n:'D6',d:3},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.85,0.28,500,2200,3); t+=d*B; });
+      ['D2','G2','A2','D3','D2','G2','A2','D3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🎵 Music — funky, groovy, disco-inspired with synth brass
+    Music: (startTime) => {
+      const bpm=120, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Funky kick pattern
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        kick(s,190,48,0.2,0.9); kick(s+B*0.5,190,48,0.14,0.4);
+        kick(s+B*2,190,48,0.2,0.9); kick(s+B*2.75,190,48,0.14,0.4);
+        clap(s+B,0.25); clap(s+B*3,0.25);
+        for(let i=0;i<16;i++) hat(s+i*B*0.25,i%4===2?0.09:0.05,i%4===2);
+      }
+      // Synth brass stabs — E7 funk
+      const stabs=[{n:'E4',t:0},{n:'G#4',t:0.03},{n:'B4',t:0.06},{n:'D5',t:0.09}];
+      const stabTimes=[0,BAR*2,BAR*4,BAR*6];
+      stabTimes.forEach(st=>{
+        stabs.forEach(({n,t})=>filtOsc('sawtooth',noteToFreq(n),startTime+st+t,0.35,0.22,300,2500,5));
+      });
+      // Funky lead melody
+      const mel=[
+        {n:'E5',d:0.25},{n:'G#5',d:0.25},{n:'B5',d:0.5},{n:'D6',d:0.5},{n:'B5',d:0.25},{n:'G#5',d:0.25},{n:'E5',d:1},{n:null,d:0.5},{n:'F#5',d:0.5},
+        {n:'A5',d:0.5},{n:'B5',d:0.5},{n:'D6',d:1},{n:'C#6',d:0.5},{n:'B5',d:0.5},{n:'A5',d:2},
+        {n:'G#5',d:0.5},{n:'F#5',d:0.5},{n:'E5',d:1},{n:'G#5',d:0.5},{n:'B5',d:0.5},{n:'E6',d:3},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.8,0.3,400,2800,4); t+=d*B; });
+      ['E2','A2','B2','E2','E2','A2','B2','E3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🐠 Ocean — slow, watery, dreamy, undulating waves
+    Ocean: (startTime) => {
+      const bpm=88, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      // Very gentle, wave-like rhythm
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        kick(s,90,35,0.35,0.35); kick(s+B*2,90,35,0.3,0.3);
+        noiseHit(s+B,0.1,0.12,4000); noiseHit(s+B*3,0.1,0.1,4000);
+        for(let i=0;i<12;i++) hat(s+i*B*(4/12),0.03,false);
+      }
+      // Undulating watery pad — Gb major / Db major chords
+      [['Db4','F4','Ab4'],['Gb3','Bb3','Db4'],['Ab3','C4','Eb4'],['Db4','F4','Ab4']].forEach((ch,ci)=>{
+        ch.forEach(n=>filtOsc('sine',noteToFreq(n),startTime+ci*BAR*2,BAR*2*0.98,0.09,300,500,0.3));
+      });
+      // Ocean arp — flowing sixteenths
+      const arpN=['Db5','F5','Ab5','Db6','Ab5','F5','Db5','Ab4'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        arpN.forEach((n,i)=>filtOsc('triangle',noteToFreq(n),s+i*B*0.5,B*0.5,0.14,400,1800,1.5));
+      }
+      // Flowing melody
+      const mel=[
+        {n:'Ab5',d:1.5},{n:'F5',d:0.5},{n:'Db5',d:2},{n:'Eb5',d:1},{n:'F5',d:1},{n:'Ab5',d:2},
+        {n:'Db6',d:1.5},{n:'Ab5',d:0.5},{n:'Gb5',d:1},{n:'F5',d:1},{n:'Eb5',d:2},{n:'Db5',d:3},{n:null,d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('triangle',noteToFreq(n),t,d*B*0.92,0.28,500,1600,2); t+=d*B; });
+      ['Db2','Gb2','Ab2','Db2','Db2','Gb2','Ab2','Db3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+
+    // 🧙 Fantasy — epic, mysterious, orchestral with magic sparkles
+    Fantasy: (startTime) => {
+      const bpm=100, B=60/bpm, BAR=B*4, BARS=8, LOOP=BAR*BARS;
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        kick(s,160,42,0.25,0.7); kick(s+B*2,160,42,0.2,0.55);
+        noiseHit(s+B,0.07,0.2,3000,2000); noiseHit(s+B*3,0.07,0.18,3000,2000);
+        for(let i=0;i<8;i++) hat(s+i*B*0.5,0.03,i%4===2);
+      }
+      // Orchestral string pads — Am / F / C / E (epic fantasy)
+      [['A3','C4','E4'],['F3','A3','C4'],['C4','E4','G4'],['E3','G#3','B3']].forEach((ch,ci)=>{
+        ch.forEach(n=>{
+          filtOsc('sawtooth',noteToFreq(n),startTime+ci*BAR*2,BAR*2*0.95,0.07,200,500,0.5);
+          filtOsc('sawtooth',noteToFreq(n),startTime+ci*BAR*2,BAR*2*0.95,0.05,200,500,0.5,8); // detuned
+        });
+      });
+      // Magic sparkle bells — Am pentatonic
+      const sparkle=['A5','C6','E6','G6','E6','C6','A5','C6'];
+      for(let b=0;b<BARS;b++) {
+        const s=startTime+b*BAR;
+        sparkle.forEach((n,i)=>bell(noteToFreq(n),s+i*B*0.5,0.6,0.2));
+      }
+      // Epic melody
+      const mel=[
+        {n:'E5',d:1},{n:'F5',d:0.5},{n:'G5',d:0.5},{n:'A5',d:2},{n:null,d:0.5},{n:'G5',d:0.5},
+        {n:'F5',d:0.5},{n:'E5',d:0.5},{n:'D5',d:1},{n:'C5',d:2},{n:null,d:1},
+        {n:'A5',d:1.5},{n:'G5',d:0.5},{n:'F5',d:1},{n:'E5',d:1},{n:'F5',d:0.5},{n:'G5',d:0.5},{n:'A5',d:2},{n:'E5',d:1},
+      ];
+      let t=startTime;
+      mel.forEach(({n,d})=>{ filtOsc('sawtooth',noteToFreq(n),t,d*B*0.88,0.28,300,1800,3); t+=d*B; });
+      ['A2','F2','C3','E2','A2','F2','C3','E3'].forEach((n,i)=>bassNote(noteToFreq(n),startTime+i*BAR,4,bpm));
+      return LOOP;
+    },
+  };
+
+  function scheduleLoop(startTime) {
+    const scheduler = THEMES[currentThemeName] || THEMES['Animals'];
+    return scheduler(startTime);
+  }
+
+  return { scheduleLoop };
+}
+
+function toggleMute() {
+  const btn   = document.getElementById('muteBtn');
+  const slash = document.getElementById('muteSlash');
+  isMuted = !isMuted;
+  saveMuted(isMuted);
+  if (isMuted) {
+    stopMusic();
+    if (panicGain) { try { panicGain.disconnect(); } catch(e) {} panicGain = null; }
+    slash.setAttribute('display', 'inline');
+    btn.classList.add('muted');
+  } else {
+    startMusic();
+    slash.setAttribute('display', 'none');
+    btn.classList.remove('muted');
+  }
+}
+
+// Apply saved mute state to button on load
+document.addEventListener('DOMContentLoaded', () => {
+  if (isMuted) {
+    const btn   = document.getElementById('muteBtn');
+    const slash = document.getElementById('muteSlash');
+    if (btn)   btn.classList.add('muted');
+    if (slash) slash.setAttribute('display', 'inline');
+  }
+});
+
+let panicGain = null;
+let inPanicMode = false;
+
+function enterPanicMode() {
+  if (isMuted) return;
+  inPanicMode = true;
+  // Mute BGM via gain (keeps it scheduled) rather than stopping it
+  if (bgmGain && audioCtx) {
+    bgmGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+  }
+  if (audioCtx && audioCtx.state === 'running') {
+    playPanicMusic();
+  }
+}
+
+function playPanicMusic() {
+  if (isMuted) return;
+  if (!audioCtx) return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.value = 0.28;
+  master.connect(ctx.destination);
+  panicGain = master; // store so we can silence it on game over
+
+  // Helper
+  function osc(type, freq, t, dur, vol, detune = 0) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    o.detune.value = detune;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  function noise(t, dur, vol, hpFreq = 6000) {
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = hpFreq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t); src.stop(t + dur + 0.01);
+  }
+
+  // Ascending staccato panic melody — gets faster each beat
+  // Notes: rapid short bursts, rising pitch, triplet-feel
+  const panicNotes = [
+    // beat 1 — slow start
+    { n: 'C5', t: 0.00 }, { n: 'E5', t: 0.22 }, { n: 'G5', t: 0.44 },
+    // beat 2 — a bit faster
+    { n: 'A5', t: 0.62 }, { n: 'G5', t: 0.78 }, { n: 'E5', t: 0.92 }, { n: 'A5', t: 1.06 },
+    // beat 3 — faster still
+    { n: 'C6', t: 1.18 }, { n: 'B5', t: 1.29 }, { n: 'A5', t: 1.40 },
+    { n: 'C6', t: 1.50 }, { n: 'B5', t: 1.60 }, { n: 'A5', t: 1.70 },
+    // beat 4 — frantic triplets
+    { n: 'G5', t: 1.80 }, { n: 'A5', t: 1.88 }, { n: 'B5', t: 1.96 },
+    { n: 'C6', t: 2.04 }, { n: 'D6', t: 2.12 }, { n: 'E6', t: 2.20 },
+    // beat 5-6 — alarm pattern
+    { n: 'E6', t: 2.30 }, { n: 'D6', t: 2.40 }, { n: 'E6', t: 2.50 }, { n: 'D6', t: 2.60 },
+    { n: 'E6', t: 2.70 }, { n: 'D6', t: 2.78 }, { n: 'E6', t: 2.86 }, { n: 'D6', t: 2.94 },
+    // beat 7-8 — wild flutter
+    { n: 'F6', t: 3.02 }, { n: 'E6', t: 3.09 }, { n: 'F6', t: 3.16 }, { n: 'E6', t: 3.23 },
+    { n: 'F6', t: 3.30 }, { n: 'E6', t: 3.36 }, { n: 'F6', t: 3.42 }, { n: 'E6', t: 3.48 },
+    { n: 'G6', t: 3.55 }, { n: 'F6', t: 3.60 }, { n: 'G6', t: 3.65 }, { n: 'F6', t: 3.70 },
+    { n: 'G6', t: 3.75 }, { n: 'F6', t: 3.79 }, { n: 'G6', t: 3.83 }, { n: 'A6', t: 3.87 },
+    // final burst
+    { n: 'A6', t: 3.92 }, { n: 'B6', t: 3.96 }, { n: 'C7', t: 4.00 },
+  ];
+
+  for (const { n, t } of panicNotes) {
+    const freq = noteToFreq(n);
+    const noteDur = 0.12;
+    osc('square', freq, now + t, noteDur, 0.18);
+    osc('triangle', freq * 2, now + t, noteDur * 0.6, 0.08);
+  }
+
+  // Ticking kick — every beat, accelerating
+  const kickTimes = [0, 0.62, 1.18, 1.70, 2.10, 2.45, 2.75, 3.00, 3.20, 3.38, 3.54, 3.67, 3.79, 3.89, 3.97];
+  for (const t of kickTimes) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(180, now + t);
+    o.frequency.exponentialRampToValueAtTime(50, now + t + 0.06);
+    g.gain.setValueAtTime(0.7, now + t);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.15);
+    o.connect(g); g.connect(master);
+    o.start(now + t); o.stop(now + t + 0.17);
+  }
+
+  // Snare on every other kick
+  const snareTimes = [0.22, 0.92, 1.50, 2.04, 2.50, 2.86, 3.16, 3.42, 3.65, 3.83];
+  for (const t of snareTimes) noise(now + t, 0.09, 0.22, 1500);
+
+  // Hi-hat 16ths getting denser
+  for (let i = 0; i < 40; i++) {
+    const interval = Math.max(0.05, 0.18 - i * 0.003);
+    const t = i * interval;
+    if (t > 4.5) break;
+    noise(now + t, 0.03, 0.06 + i * 0.003, 8000);
+  }
+
+  // Wobble bass underneath — low sine pulsing
+  for (let i = 0; i < 12; i++) {
+    const t2 = i * 0.38;
+    if (t2 > 4.5) break;
+    osc('sine', 80 + i * 4, now + t2, 0.32, 0.35);
+  }
+}
+
+// ── "I'm saved!" — warm rising resolved cheer ───────────────────────────────
+function playIAmSaved() {
+  if (isMuted) return;
+  if (!audioCtx) return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.value = 0.32;
+  master.connect(ctx.destination);
+
+  function bell(freq, t, dur, vol) {
+    const o  = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+    const g  = ctx.createGain();
+    o.type  = 'triangle'; o.frequency.value  = freq;
+    o2.type = 'sine';     o2.frequency.value = freq * 3; // bright harmonic
+    const g2 = ctx.createGain(); g2.gain.value = 0.15;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.05);
+    o2.start(t); o2.stop(t + dur + 0.05);
+  }
+
+  // Big warm rising chord arpeggio: C → E → G → C → E → G (two octaves)
+  // Then a sparkle shower on top
+  const saved = [
+    { n: 'C4',  t: 0.00, dur: 0.9,  vol: 0.6  },
+    { n: 'E4',  t: 0.10, dur: 0.85, vol: 0.55 },
+    { n: 'G4',  t: 0.20, dur: 0.80, vol: 0.55 },
+    { n: 'C5',  t: 0.32, dur: 0.75, vol: 0.6  },
+    { n: 'E5',  t: 0.44, dur: 0.70, vol: 0.55 },
+    { n: 'G5',  t: 0.55, dur: 0.65, vol: 0.5  },
+    { n: 'C6',  t: 0.65, dur: 1.20, vol: 0.65 },
+    // sparkle shower
+    { n: 'E6',  t: 0.75, dur: 0.5,  vol: 0.35 },
+    { n: 'G6',  t: 0.82, dur: 0.5,  vol: 0.3  },
+    { n: 'C7',  t: 0.90, dur: 0.8,  vol: 0.25 },
+    { n: 'G6',  t: 0.98, dur: 0.4,  vol: 0.2  },
+    { n: 'E6',  t: 1.06, dur: 0.35, vol: 0.18 },
+  ];
+
+  for (const { n, t, dur, vol } of saved) {
+    bell(noteToFreq(n), now + t, dur, vol);
+  }
+
+  // Warm sub boom on the root
+  const sub = ctx.createOscillator();
+  const sg = ctx.createGain();
+  sub.type = 'sine'; sub.frequency.value = noteToFreq('C3');
+  sg.gain.setValueAtTime(0.5, now);
+  sg.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+  sub.connect(sg); sg.connect(master);
+  sub.start(now); sub.stop(now + 0.65);
+}
+
+function playVictorySound() {
+  if (isMuted) return;
+  if (!audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const out = ctx.createGain();
+  out.gain.value = 0.38;
+  out.connect(ctx.destination);
+
+  function bell(freq, t, dur, vol) {
+    const o  = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+    const g  = ctx.createGain();
+    o.type  = 'triangle'; o.frequency.value = freq;
+    o2.type = 'sine';     o2.frequency.value = freq * 4;
+    const g2 = ctx.createGain(); g2.gain.value = 0.08;
+    o2.connect(g2); g2.connect(g);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + dur + 0.05);
+    o2.start(t); o2.stop(t + dur * 0.4);
+  }
+
+  function stab(freqs, t, dur, vol) {
+    freqs.forEach(freq => {
+      const o = ctx.createOscillator();
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      o.type = 'sawtooth'; o.frequency.value = freq;
+      f.type = 'lowpass'; f.frequency.setValueAtTime(2500, t);
+      f.frequency.exponentialRampToValueAtTime(600, t + dur);
+      f.Q.value = 2;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(f); f.connect(g); g.connect(out);
+      o.start(t); o.stop(t + dur + 0.05);
+    });
+  }
+
+  function blip(freq, t) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.3, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + 0.08);
+  }
+
+  // ── 1. Punchy chord stab (C maj)
+  stab([noteToFreq('C4'), noteToFreq('E4'), noteToFreq('G4')], now, 0.25, 0.18);
+
+  // ── 2. Rising arpeggio C → E → G → C → E → G → C (two octaves, fast)
+  const arp = ['C5','E5','G5','C6','E6','G6','C7'];
+  arp.forEach((n, i) => bell(noteToFreq(n), now + 0.05 + i * 0.07, 0.5 + i * 0.06, 0.55 - i * 0.03));
+
+  // ── 3. Sparkle shower: random high blips cascading down
+  const sparkNotes = ['C7','G6','E6','C6','G5','E5','G5','C6'];
+  sparkNotes.forEach((n, i) => blip(noteToFreq(n), now + 0.55 + i * 0.055));
+
+  // ── 4. Final big warm chord ring-out
+  const finalT = now + 1.0;
+  [noteToFreq('C4'), noteToFreq('E4'), noteToFreq('G4'), noteToFreq('C5')].forEach(freq => {
+    bell(freq, finalT, 1.8, 0.45);
+  });
+
+  // ── 5. Confetti blips on top of final chord
+  ['E6','G6','C7','E6','G5'].forEach((n, i) => blip(noteToFreq(n), finalT + 0.05 + i * 0.07));
+}
+
+function playGameOverSound() {
+  if (isMuted) return;
+  if (!audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const out = ctx.createGain();
+  out.gain.value = 0.35;
+  out.connect(ctx.destination);
+
+  // Reverb for drama
+  const revBuf = ctx.createBuffer(2, ctx.sampleRate * 1.5, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = revBuf.getChannelData(c);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 2.5);
+  }
+  const rev = ctx.createConvolver(); rev.buffer = revBuf;
+  const rg  = ctx.createGain();     rg.gain.value = 0.22;
+  rev.connect(rg); rg.connect(out);
+
+  function droopNote(freq, t, dur, vol, droopTo) {
+    const o = ctx.createOscillator();
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(droopTo, t + dur);
+    f.type = 'lowpass'; f.frequency.value = 1200; f.Q.value = 1.5;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.setValueAtTime(vol * 0.8, t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.15);
+    o.connect(f); f.connect(g);
+    g.connect(out); g.connect(rev);
+    o.start(t); o.stop(t + dur + 0.2);
+  }
+
+  function sadSine(freq, t, dur, vol) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  function thud(t, vol = 0.5) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + 0.3);
+  }
+
+  // ── 1. Initial "uh oh" — two drooping notes close together
+  droopNote(noteToFreq('G4'), now,        0.30, 0.55, noteToFreq('F4'));
+  droopNote(noteToFreq('Eb4'), now + 0.28, 0.38, 0.50, noteToFreq('C4'));
+
+  // ── 2. Sad low thud
+  thud(now + 0.18, 0.45);
+
+  // ── 3. Melancholy descending phrase — C → Bb → Ab → G (minor collapse)
+  const phrase = [
+    { n: 'C5',  t: 0.72, dur: 0.28, droop: 'B4'  },
+    { n: 'Bb4', t: 1.02, dur: 0.30, droop: 'Ab4' },
+    { n: 'Ab4', t: 1.34, dur: 0.35, droop: 'G4'  },
+    { n: 'G4',  t: 1.70, dur: 0.50, droop: 'Eb4' },
+  ];
+  phrase.forEach(({ n, t, dur, droop }) =>
+    droopNote(noteToFreq(n), now + t, dur, 0.42, noteToFreq(droop)));
+
+  // ── 4. Soft harmonic undertones during descent (adds pathos)
+  sadSine(noteToFreq('Eb3'), now + 0.72, 1.6,  0.18);
+  sadSine(noteToFreq('Bb2'), now + 1.10, 1.2,  0.14);
+
+  // ── 5. Final long low "bwoomp" with deep droop — the "oh nooo" tail
+  droopNote(noteToFreq('Eb4'), now + 2.22, 0.90, 0.48, noteToFreq('Bb3'));
+  thud(now + 2.22, 0.55);
+  droopNote(noteToFreq('Bb3'), now + 2.55, 1.10, 0.38, noteToFreq('G3'));
+
+  // ── 6. Fading echo blips — little sad "..." dots at the end
+  [0, 0.22, 0.42].forEach((offset, i) => {
+    sadSine(noteToFreq('Eb4'), now + 3.70 + offset, 0.18, 0.12 - i * 0.03);
+  });
+}
+
+function playWrongSound() {
+  if (isMuted) return;
+  if (!audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  const out = ctx.createGain();
+  out.gain.value = 0.32;
+  out.connect(ctx.destination);
+
+  function sadNote(freq, t, dur, vol) {
+    const o = ctx.createOscillator();
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(freq, t);
+    // Droop the pitch down — sad wah-wah fall
+    o.frequency.exponentialRampToValueAtTime(freq * 0.78, t + dur);
+    f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 2;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.setValueAtTime(vol * 0.7, t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.05);
+    o.connect(f); f.connect(g); g.connect(out);
+    o.start(t); o.stop(t + dur + 0.08);
+  }
+
+  // Two descending notes — a little "bwomp bwomp" pity melody
+  // E4 drooping → then C4 drooping even lower, like a sad trombone lite
+  sadNote(noteToFreq('E4'), now,        0.18, 0.55);
+  sadNote(noteToFreq('C4'), now + 0.20, 0.28, 0.45);
+
+  // Soft low thud underneath for weight
+  const thud = ctx.createOscillator();
+  const tg   = ctx.createGain();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(120, now);
+  thud.frequency.exponentialRampToValueAtTime(55, now + 0.18);
+  tg.gain.setValueAtTime(0.35, now);
+  tg.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+  thud.connect(tg); tg.connect(out);
+  thud.start(now); thud.stop(now + 0.25);
+}
+
+function playRewardSound() {
+  if (isMuted) return;
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') return;
+
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  // Magic wand twinkle: C5 → E5 → G5 → C6, bell sine with sparkle harmonics
+  const notes = [
+    { freq: noteToFreq('C5'),  t: 0.00, dur: 0.5,  vol: 0.45 },
+    { freq: noteToFreq('E5'),  t: 0.10, dur: 0.5,  vol: 0.42 },
+    { freq: noteToFreq('G5'),  t: 0.20, dur: 0.5,  vol: 0.42 },
+    { freq: noteToFreq('C6'),  t: 0.32, dur: 0.9,  vol: 0.50 },
+  ];
+
+  for (const { freq, t, dur, vol } of notes) {
+    const s = now + t;
+
+    // Warm bell body (sine)
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, s);
+    g.gain.linearRampToValueAtTime(vol, s + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, s + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(s); o.stop(s + dur + 0.05);
+
+    // Bright octave shimmer (triangle, softer)
+    const o2 = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o2.type = 'triangle';
+    o2.frequency.value = freq * 2;
+    g2.gain.setValueAtTime(0, s);
+    g2.gain.linearRampToValueAtTime(vol * 0.18, s + 0.01);
+    g2.gain.exponentialRampToValueAtTime(0.001, s + dur * 0.5);
+    o2.connect(g2); g2.connect(ctx.destination);
+    o2.start(s); o2.stop(s + dur * 0.5 + 0.05);
+
+    // High fairy sparkle (sine 3x, very soft, short)
+    const o3 = ctx.createOscillator();
+    const g3 = ctx.createGain();
+    o3.type = 'sine';
+    o3.frequency.value = freq * 3;
+    g3.gain.setValueAtTime(0, s);
+    g3.gain.linearRampToValueAtTime(vol * 0.08, s + 0.008);
+    g3.gain.exponentialRampToValueAtTime(0.001, s + 0.12);
+    o3.connect(g3); g3.connect(ctx.destination);
+    o3.start(s); o3.stop(s + 0.15);
+  }
+
+  // Trailing sparkle cascade — random high pings after the arpeggio
+  const sparkFreqs = [noteToFreq('E7'), noteToFreq('G7'), noteToFreq('A7'), noteToFreq('C8')];
+  for (let i = 0; i < 6; i++) {
+    const s = now + 0.5 + i * 0.07 + Math.random() * 0.06;
+    const freq = sparkFreqs[Math.floor(Math.random() * sparkFreqs.length)];
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, s);
+    g.gain.linearRampToValueAtTime(0.06, s + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(s); o.stop(s + 0.2);
+  }
+}
+
+function playCorrectSound() {
+  if (isMuted) return;
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') return;
+
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  // A little 3-note rising chime: C6 → E6 → G6, staggered
+  const notes = [
+    { freq: noteToFreq('C6'), t: 0,     dur: 0.18 },
+    { freq: noteToFreq('E6'), t: 0.07,  dur: 0.18 },
+    { freq: noteToFreq('G6'), t: 0.14,  dur: 0.28 },
+  ];
+
+  for (const { freq, t, dur } of notes) {
+    const start = now + t;
+
+    // Main bell tone (triangle = pure, warm)
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, start);
+    g.gain.linearRampToValueAtTime(0.55, start + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur + 0.12);
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.15);
+
+    // Sparkle octave (sine, softer)
+    const osc2 = ctx.createOscillator();
+    const g2   = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.value = freq * 2;
+    g2.gain.setValueAtTime(0, start);
+    g2.gain.linearRampToValueAtTime(0.15, start + 0.01);
+    g2.gain.exponentialRampToValueAtTime(0.001, start + dur + 0.08);
+    osc2.connect(g2);
+    g2.connect(ctx.destination);
+    osc2.start(start);
+    osc2.stop(start + dur + 0.1);
+  }
+}
+
+// ── Reward activation sounds ──────────────────────────────────────────────────
+
+// 💡 Hint — soft "ding" + light shimmer, like a lightbulb flickering on
+function playHintSound() {
+  if (isMuted || !audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx, now = ctx.currentTime;
+  // Warm "click" thump
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.06), ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.008));
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const g = ctx.createGain(); g.gain.value = 0.18;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  src.connect(lp); lp.connect(g); g.connect(ctx.destination);
+  src.start(now);
+  // Rising two-note chime: E5 → B5
+  [[329.63, 0.04], [987.77, 0.14]].forEach(([freq, t]) => {
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'triangle'; o.frequency.value = freq;
+    og.gain.setValueAtTime(0, now + t);
+    og.gain.linearRampToValueAtTime(0.38, now + t + 0.01);
+    og.gain.exponentialRampToValueAtTime(0.001, now + t + 0.3);
+    o.connect(og); og.connect(ctx.destination);
+    o.start(now + t); o.stop(now + t + 0.35);
+  });
+}
+
+// ⌛ Freeze — icy descending crystalline sweep, cold and spacious
+function playFreezeSound() {
+  if (isMuted || !audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx, now = ctx.currentTime;
+  // Descending crystal tones
+  const notes = [
+    [2093, 0.00], [1760, 0.08], [1397, 0.16], [1047, 0.24], [880, 0.32],
+  ];
+  notes.forEach(([freq, t]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, now + t);
+    g.gain.linearRampToValueAtTime(0.22, now + t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.35);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(now + t); o.stop(now + t + 0.4);
+    // Shimmer overtone
+    const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+    o2.type = 'sine'; o2.frequency.value = freq * 1.5;
+    g2.gain.setValueAtTime(0, now + t);
+    g2.gain.linearRampToValueAtTime(0.07, now + t + 0.008);
+    g2.gain.exponentialRampToValueAtTime(0.001, now + t + 0.2);
+    o2.connect(g2); g2.connect(ctx.destination);
+    o2.start(now + t); o2.stop(now + t + 0.25);
+  });
+  // Low whoosh
+  const wo = ctx.createOscillator(), wg = ctx.createGain();
+  wo.type = 'sawtooth'; wo.frequency.setValueAtTime(280, now);
+  wo.frequency.exponentialRampToValueAtTime(60, now + 0.55);
+  const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 400;
+  wg.gain.setValueAtTime(0.12, now); wg.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+  wo.connect(wf); wf.connect(wg); wg.connect(ctx.destination);
+  wo.start(now); wo.stop(now + 0.6);
+}
+
+// 🎲 Shuffle — playful bouncy rattle, like dice tumbling
+function playShuffleSound() {
+  if (isMuted || !audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx, now = ctx.currentTime;
+  // 5 quick noise bursts with slight pitch variation — dice rattle
+  for (let i = 0; i < 5; i++) {
+    const t = now + i * 0.055;
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.04), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.exp(-j / (ctx.sampleRate * 0.012));
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 800 + Math.random() * 1200; bp.Q.value = 1.5;
+    const g = ctx.createGain(); g.gain.value = 0.25 - i * 0.03;
+    src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+    src.start(t);
+  }
+  // Final landing "thud" + bright note
+  const landT = now + 0.30;
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = 'triangle'; o.frequency.value = 523.25; // C5
+  og.gain.setValueAtTime(0, landT);
+  og.gain.linearRampToValueAtTime(0.45, landT + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.001, landT + 0.22);
+  o.connect(og); og.connect(ctx.destination);
+  o.start(landT); o.stop(landT + 0.25);
+}
+
+// ❤️ Full Heart — warm, full, rising chord swell like a heartbeat restored
+function playFullHeartSound() {
+  if (isMuted || !audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx, now = ctx.currentTime;
+  // Soft thud (heartbeat pulse)
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.12), ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.03));
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200;
+  const g0 = ctx.createGain(); g0.gain.value = 0.5;
+  src.connect(lp); lp.connect(g0); g0.connect(ctx.destination);
+  src.start(now);
+  // Warm rising triad: C4 → E4 → G4 → C5
+  [[261.63, 0.06], [329.63, 0.14], [392.00, 0.22], [523.25, 0.30]].forEach(([freq, t]) => {
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    og.gain.setValueAtTime(0, now + t);
+    og.gain.linearRampToValueAtTime(0.30, now + t + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.001, now + t + 0.45);
+    o.connect(og); og.connect(ctx.destination);
+    o.start(now + t); o.stop(now + t + 0.5);
+    // Soft second harmonic
+    const o2 = ctx.createOscillator(), og2 = ctx.createGain();
+    o2.type = 'triangle'; o2.frequency.value = freq * 2;
+    og2.gain.setValueAtTime(0, now + t);
+    og2.gain.linearRampToValueAtTime(0.08, now + t + 0.02);
+    og2.gain.exponentialRampToValueAtTime(0.001, now + t + 0.3);
+    o2.connect(og2); og2.connect(ctx.destination);
+    o2.start(now + t); o2.stop(now + t + 0.35);
+  });
+}
+
+function playRewardActivationSound(key) {
+  switch (key) {
+    case 'hint':      playHintSound();      break;
+    case 'freeze':    playFreezeSound();    break;
+    case 'shuffle':   playShuffleSound();   break;
+    case 'fullheart': playFullHeartSound(); break;
+  }
+}
+
+function startMusic() {
+  if (isMuted) return;
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  // Always create a fresh graph — old one was disconnected by stopMusic
+  musicSynth = initMusic(audioCtx);
+  nextLoopTime = 0;
+  musicPlaying = true;
+  scheduleNextLoop();
+}
+
+function scheduleNextLoop() {
+  if (!musicPlaying) return;
+  const now = audioCtx.currentTime;
+  const start = Math.max(now + 0.05, nextLoopTime);
+  const dur = musicSynth.scheduleLoop(start);
+  nextLoopTime = start + dur;
+  loopTimeout = setTimeout(scheduleNextLoop, (nextLoopTime - audioCtx.currentTime - 0.3) * 1000);
+}
+
+function stopMusic() {
+  inPanicMode = false;
+  musicPlaying = false;
+  clearTimeout(loopTimeout);
+  loopTimeout = null;
+  // Disconnect BGM master gain from destination — severs ALL pre-scheduled nodes instantly
+  if (bgmGain && audioCtx) {
+    try { bgmGain.disconnect(); } catch(e) {}
+    bgmGain = null;
+  }
+  // Also null out musicSynth so startMusic always calls initMusic for a fresh graph
+  musicSynth = null;
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+// Show start overlay (already active), wait for user to press start
+
+// Rebuild grid layout on resize / orientation change
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (state.totalTiles > 0 && state.revealedTiles !== undefined) {
+      buildGrid(state.cols, state.rows);
+      // Re-mark revealed tiles
+      state.revealedTiles.forEach(idx => {
+        const el = getTileEl(idx);
+        if (el) {
+          el.classList.add('revealed');
+          const img = el.querySelector('img');
+          if (img) { img.style.opacity = '1'; img.style.transform = 'scale(1)'; }
+        }
+      });
+      updateAvailableStates();
+      buildQueueBelt();
+    }
+  }, 120);
+});
+</script>
+</body>
+
+</body>
+</html>
