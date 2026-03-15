@@ -1537,10 +1537,10 @@ function getLevelTheme(level) {
 }
 
 // ─── PHOTO GENERATION ────────────────────────────────────────────────────────
-// Picks one of 1.jpg–10.jpg for the level. Each level gets a consistent pick
-// (same level always uses same jpg), cycling through all 10 images.
+// Picks one of 1.jpg–45.jpg for the level. Each level gets a consistent pick
+// (same level always uses same jpg), cycling through all 45 images.
 function getLevelJpg(level) {
-  return ((level - 1) % 10 + 1) + '.jpg';
+  return ((level - 1) % 45 + 1) + '.jpg';
 }
 
 async function generateLevelImage(level, cols, rows, patternComplexity) {
