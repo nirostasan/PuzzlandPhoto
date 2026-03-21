@@ -1008,6 +1008,68 @@
     transform: var(--visible-transform, translateX(-50%) translateY(-50%));
   }
 
+  /* ── Peek overlay ── */
+  .peek-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    background: rgba(0,0,0,0.82);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .peek-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+  }
+  .peek-photo-wrap {
+    transform: scale(0.8);
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(52,211,153,0.35), 0 0 0 2px #6ee7b7;
+    max-width: min(88vw, 420px);
+    max-height: 70vh;
+  }
+  .peek-overlay.active .peek-photo-wrap {
+    transform: scale(1);
+  }
+  .peek-overlay.closing .peek-photo-wrap {
+    transform: scale(0.8);
+  }
+  .peek-photo-wrap img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .peek-timer-bar {
+    width: min(88vw, 420px);
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .peek-timer-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #34d399, #6ee7b7);
+    border-radius: 99px;
+    transform-origin: left;
+    transition: transform 0.1s linear;
+  }
+  .peek-hint {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.08em;
+  }
+
   .time-bonus-pop {
     position: fixed;
     z-index: 999;
@@ -1750,13 +1812,16 @@ const REWARDS = {
   freeze:    { emoji: '⌛', label: 'Time Freeze', desc: '+30 seconds',                bg: '#cffafe', glow: '#22d3ee', border: '#67e8f9' },
   shuffle:   { emoji: '🎲', label: 'Shuffle',     desc: 'Change current tile',        bg: '#ede9fe', glow: '#a78bfa', border: '#c4b5fd' },
   fullheart: { emoji: '❤️', label: 'Full Heart',  desc: 'Restore all 3 lives',        bg: '#ffe4e6', glow: '#fb7185', border: '#fda4af' },
+  peek:      { emoji: '👁️', label: 'Peek',        desc: 'See the full photo for 10s', bg: '#e0f7e9', glow: '#34d399', border: '#6ee7b7' },
 };
 const REWARD_KEYS = Object.keys(REWARDS);
 
-let playerRewards = {}; // e.g. { hint: 2, freeze: 1 }
+let playerRewards = { peek: 10 }; // TEMP: 10 peek rewards for testing
 
-function pickRandomReward() {
-  return REWARD_KEYS[Math.floor(Math.random() * REWARD_KEYS.length)];
+function pickRandomReward(level = state.level) {
+  // Peek unlocks after first full wave cycle (level 7+)
+  const available = REWARD_KEYS.filter(k => k !== 'peek' || level >= 7);
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 function grantRandomReward() {
@@ -1844,6 +1909,7 @@ function applyReward(key) {
     case 'freeze':    applyFreeze();    break;
     case 'shuffle':   applyShuffle();   break;
     case 'fullheart': applyFullHeart(); break;
+    case 'peek':      applyPeek();      break;
   }
 }
 
@@ -1934,6 +2000,55 @@ function applyFullHeart() {
   state.lives = 3;
   updateLivesDisplay();
   showToast('❤️ Full Heart! All lives restored.');
+}
+
+let _peekTimeout = null;
+let _peekInterval = null;
+
+async function applyPeek() {
+  if (!state.fullImage) return;
+
+  stopTimer();
+
+  const overlay  = document.getElementById('peekOverlay');
+  const photo    = document.getElementById('peekPhoto');
+  const fill     = document.getElementById('peekTimerFill');
+  const wrap     = document.getElementById('peekPhotoWrap');
+
+  // Set the full image
+  photo.src = state.fullImage;
+
+  // Reset timer bar
+  fill.style.transition = 'none';
+  fill.style.transform  = 'scaleX(1)';
+  fill.getBoundingClientRect();
+
+  // Open with animation
+  overlay.classList.remove('closing');
+  overlay.classList.add('active');
+
+  // Start draining bar
+  requestAnimationFrame(() => {
+    fill.style.transition = 'transform 10s linear';
+    fill.style.transform  = 'scaleX(0)';
+  });
+
+  const closePeek = async () => {
+    clearTimeout(_peekTimeout);
+    clearInterval(_peekInterval);
+    overlay.removeEventListener('click', closePeek);
+
+    // Close animation
+    overlay.classList.add('closing');
+    await sleep(300);
+    overlay.classList.remove('active', 'closing');
+
+    // Resume timer
+    startTimer(timerSecondsLeft);
+  };
+
+  overlay.addEventListener('click', closePeek);
+  _peekTimeout = setTimeout(closePeek, 10000);
 }
 
 function showToast(msg) {
@@ -2508,7 +2623,7 @@ async function startGame() {
   stopTimer();
   state.level = loadLevel();
   state.score = 0;
-  playerRewards = {};
+  playerRewards = { peek: 10 }; // TEMP: 10 peek rewards for testing
   hideOverlays();
   await initLevel();
   renderRewardBar();
@@ -2542,8 +2657,13 @@ async function nextLevel() {
     if (isRewardLevel(prevLevel)) {
       stopTimer();
       const rewardsSnapshot = { ...playerRewards };
-      const rewarded = pickRandomReward();
-      await showRewardReveal(rewarded, rewardsSnapshot);
+      const rewarded = pickRandomReward(prevLevel);
+      if (rewarded === 'peek') {
+        playerRewards['peek'] = (playerRewards['peek'] || 0) + 1;
+        renderRewardBar('peek');
+      } else {
+        await showRewardReveal(rewarded, rewardsSnapshot);
+      }
       startTimer(timerSecondsLeft);
     }
   } catch(e) {
@@ -3901,12 +4021,37 @@ function playFullHeartSound() {
   });
 }
 
+// 👁️ Peek — soft whoosh + sparkle, like a curtain lifting
+function playPeekSound() {
+  if (isMuted || !audioCtx || audioCtx.state === 'suspended') return;
+  const ctx = audioCtx, now = ctx.currentTime;
+  // Soft rising whoosh
+  const wo = ctx.createOscillator(), wg = ctx.createGain(), wf = ctx.createBiquadFilter();
+  wo.type = 'sine'; wo.frequency.setValueAtTime(300, now); wo.frequency.exponentialRampToValueAtTime(900, now + 0.35);
+  wf.type = 'bandpass'; wf.frequency.value = 600; wf.Q.value = 0.8;
+  wg.gain.setValueAtTime(0, now); wg.gain.linearRampToValueAtTime(0.18, now + 0.05);
+  wg.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  wo.connect(wf); wf.connect(wg); wg.connect(ctx.destination);
+  wo.start(now); wo.stop(now + 0.45);
+  // Sparkle notes
+  [[1046, 0.15], [1318, 0.22], [1568, 0.29]].forEach(([freq, t]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, now + t);
+    g.gain.linearRampToValueAtTime(0.18, now + t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.22);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(now + t); o.stop(now + t + 0.25);
+  });
+}
+
 function playRewardActivationSound(key) {
   switch (key) {
     case 'hint':      playHintSound();      break;
     case 'freeze':    playFreezeSound();    break;
     case 'shuffle':   playShuffleSound();   break;
     case 'fullheart': playFullHeartSound(); break;
+    case 'peek':      playPeekSound();      break;
   }
 }
 
@@ -3971,6 +4116,16 @@ window.addEventListener('resize', () => {
   }, 120);
 });
 </script>
+
+<!-- Peek Overlay -->
+<div id="peekOverlay" class="peek-overlay">
+  <div class="peek-photo-wrap" id="peekPhotoWrap">
+    <img id="peekPhoto" src="" alt="">
+  </div>
+  <div class="peek-timer-bar"><div class="peek-timer-fill" id="peekTimerFill"></div></div>
+  <div class="peek-hint">Peek! Photo revealed for a few seconds...</div>
+</div>
+
 </body>
 
 </body>
