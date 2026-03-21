@@ -2658,12 +2658,7 @@ async function nextLevel() {
       stopTimer();
       const rewardsSnapshot = { ...playerRewards };
       const rewarded = pickRandomReward(prevLevel);
-      if (rewarded === 'peek') {
-        playerRewards['peek'] = (playerRewards['peek'] || 0) + 1;
-        renderRewardBar('peek');
-      } else {
-        await showRewardReveal(rewarded, rewardsSnapshot);
-      }
+      await showRewardReveal(rewarded, rewardsSnapshot);
       startTimer(timerSecondsLeft);
     }
   } catch(e) {
