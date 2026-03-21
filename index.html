@@ -1816,7 +1816,7 @@ const REWARDS = {
 };
 const REWARD_KEYS = Object.keys(REWARDS);
 
-let playerRewards = { peek: 10 }; // TEMP: 10 peek rewards for testing
+let playerRewards = {}; // e.g. { hint: 2, freeze: 1 }
 
 function pickRandomReward(level = state.level) {
   // Peek unlocks after first full wave cycle (level 7+)
@@ -2623,7 +2623,7 @@ async function startGame() {
   stopTimer();
   state.level = loadLevel();
   state.score = 0;
-  playerRewards = { peek: 10 }; // TEMP: 10 peek rewards for testing
+  playerRewards = {};
   hideOverlays();
   await initLevel();
   renderRewardBar();
