@@ -116,6 +116,17 @@
     flex-shrink: 0;
   }
 
+  /* On narrow screens the 5 reward buttons + gaps (300px) can reach or exceed
+     #app's inner width, causing the rightmost badge's -6px overhang to be
+     clipped by #app's overflow:hidden. Add horizontal breathing room so the
+     centered group keeps ~8px safety margin on each side. Wider screens are
+     untouched. */
+  @media (max-width: 420px) {
+    .reward-bar {
+      padding: 0 8px;
+    }
+  }
+
   /* ── Grid outer: flex-grows to fill remaining space ── */
   .grid-outer {
     position: relative;
