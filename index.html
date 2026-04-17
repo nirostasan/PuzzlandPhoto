@@ -189,6 +189,23 @@
     flex-shrink: 0;
     transform: scaleX(0.82);
     transform-origin: left center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  /* Narrow-screen fix (e.g. 1080x2340 phones at ~412 CSS px wide).
+     scaleX(0.82) visually shrinks the logo by 18% but flex layout still reserves
+     its untransformed width, which can clip the third heart. On narrow screens
+     only, reclaim that phantom ~18% so the HUD has room. Wider screens are
+     untouched. */
+  @media (max-width: 420px) {
+    .logo {
+      margin-right: -0.95em;
+    }
+  }
+  .logo:active {
+    opacity: 0.75;
+    transform: scaleX(0.82) scale(0.95);
   }
     letter-spacing: -0.02em;
     display: flex;
@@ -416,20 +433,17 @@
     pointer-events: none;
   }
 
-  .tile.revealed img {
+  .tile.revealed .tile-img {
     opacity: 1;
-    transform: scale(1);
   }
 
-  .tile img {
+  .tile-img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
     opacity: 0;
-    transform: scale(1.1);
-    transition: opacity 0.4s, transform 0.4s;
+    transition: opacity 0.4s;
   }
 
   .tile.available {
@@ -1104,7 +1118,7 @@
 
 <div id="app">
 <header>
-  <div class="logo">
+  <div class="logo" onclick="onLogoTap()" role="button" aria-label="Main menu">
     <span class="puzzle-icon">🧩</span><span class="p1">P</span><span class="p2">u</span><span class="p3">z</span><span class="p4">z</span><span class="p5">l</span><span class="p6">a</span><span class="p7">n</span><span class="p8">d</span>
   </div>
   <button class="mute-btn" id="muteBtn" onclick="toggleMute()" aria-label="Toggle music">
@@ -1169,7 +1183,7 @@
       <div><span>◆</span>Grid grows each level</div>
 
     </div>
-    <button class="btn btn-primary" onclick="startGame()">START PLAYING</button>
+    <button class="btn btn-primary" id="startPlayBtn" onclick="startGame()">START PLAYING</button>
     <button class="btn btn-secondary" onclick="restartGame()">RESTART GAME</button>
   </div>
 </div>
@@ -1317,6 +1331,18 @@
     <div style="display:flex;gap:12px;width:100%;margin-top:4px;">
       <button class="btn btn-secondary" style="flex:1;" onclick="hideRestartConfirm()">No</button>
       <button class="btn btn-primary" style="flex:1;background:var(--accent2);border-color:var(--accent2);" onclick="confirmRestart()">Yes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Menu Confirm Dialog -->
+<div class="overlay" id="mainMenuConfirmOverlay">
+  <div class="overlay-box" style="gap:16px;padding:36px 32px;">
+    <div class="overlay-icon">🏠</div>
+    <div class="overlay-title" style="font-size:1.2rem;line-height:1.3;">Return to main menu?<br><span style="font-size:0.85rem;font-weight:500;opacity:0.75;">Your progress will be saved.</span></div>
+    <div style="display:flex;gap:12px;width:100%;margin-top:4px;">
+      <button class="btn btn-secondary" style="flex:1;" onclick="hideMainMenuConfirm()">No</button>
+      <button class="btn btn-primary" style="flex:1;background:var(--accent2);border-color:var(--accent2);" onclick="confirmMainMenu()">Yes</button>
     </div>
   </div>
 </div>
@@ -1612,63 +1638,59 @@ function getLevelJpg(level) {
 }
 
 async function generateLevelImage(level, cols, rows, patternComplexity) {
-  const TILE_PX = 120;
-  const canvasW = cols * TILE_PX;
-  const canvasH = rows * TILE_PX;
+  // No canvas — just return the jpg path directly.
+  // CSS background-image handles cropping per tile, no toDataURL needed.
+  return getLevelJpg(level);
+}
 
-  const jpgFile = getLevelJpg(level);
+// Returns tile descriptor object used by buildGrid / buildQueueBelt
+function extractTile(jpgPath, row, col, cols, rows) {
+  return Promise.resolve({ src: jpgPath, row, col, cols, rows });
+}
 
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      // Draw the jpg scaled/cropped to fill the grid canvas (cover behaviour)
-      const canvas = document.createElement('canvas');
-      canvas.width  = canvasW;
-      canvas.height = canvasH;
-      const ctx = canvas.getContext('2d');
-
-      const scaleX = canvasW / img.width;
-      const scaleY = canvasH / img.height;
-      const scale  = Math.max(scaleX, scaleY);
-      const drawW  = img.width  * scale;
-      const drawH  = img.height * scale;
-      const offsetX = (canvasW - drawW) / 2;
-      const offsetY = (canvasH - drawH) / 2;
-
-      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-      resolve(canvas.toDataURL('image/jpeg', 0.92));
+// Load the natural dimensions of an image so tiles can use cover-crop rather
+// than stretching the source photo to match the grid's aspect ratio.
+const _imgDimCache = {};
+function loadImageDimensions(src) {
+  if (_imgDimCache[src]) return Promise.resolve(_imgDimCache[src]);
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      const d = { w: im.naturalWidth || 1, h: im.naturalHeight || 1 };
+      _imgDimCache[src] = d;
+      resolve(d);
     };
-    img.onerror = () => {
-      // Fallback: solid dark rect if jpg is missing
-      const canvas = document.createElement('canvas');
-      canvas.width  = canvasW;
-      canvas.height = canvasH;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#1c1c28';
-      ctx.fillRect(0, 0, canvasW, canvasH);
-      resolve(canvas.toDataURL('image/png'));
+    im.onerror = () => {
+      // If image fails to load, fall back to assuming square so we don't crash.
+      const d = { w: 1, h: 1 };
+      _imgDimCache[src] = d;
+      resolve(d);
     };
-    img.src = jpgFile;
+    im.src = src;
   });
 }
 
-
-// Extract a specific tile from the full image
-function extractTile(fullImageDataUrl, row, col, cols, rows) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const tileW = img.width  / cols;
-      const tileH = img.height / rows;
-      const canvas = document.createElement('canvas');
-      canvas.width  = tileW;
-      canvas.height = tileH;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, col * tileW, row * tileH, tileW, tileH, 0, 0, tileW, tileH);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.src = fullImageDataUrl;
-  });
+// Compute cover-crop metrics for rendering a grid of square tiles that collectively
+// display a source photo at its natural aspect ratio, center-cropped to fit.
+// All values are in pixels relative to a single tile's coordinate space.
+function getCoverMetrics(cols, rows, tileSize, imgW, imgH) {
+  const gridW = cols * tileSize;
+  const gridH = rows * tileSize;
+  const imgAR  = imgW / imgH;
+  const gridAR = gridW / gridH;
+  let drawnW, drawnH;
+  if (imgAR > gridAR) {
+    // Image is wider than grid: match heights, crop sides.
+    drawnH = gridH;
+    drawnW = gridH * imgAR;
+  } else {
+    // Image is taller than (or equal to) grid: match widths, crop top/bottom.
+    drawnW = gridW;
+    drawnH = gridW / imgAR;
+  }
+  const xOverflow = (drawnW - gridW) / 2;
+  const yOverflow = (drawnH - gridH) / 2;
+  return { bgW: drawnW, bgH: drawnH, xOverflow, yOverflow };
 }
 
 // ─── TIMER ────────────────────────────────────────────────────────────────────
@@ -1827,6 +1849,7 @@ function pickRandomReward(level = state.level) {
 function grantRandomReward() {
   const key = pickRandomReward();
   playerRewards[key] = (playerRewards[key] || 0) + 1;
+  saveRewards();
   renderRewardBar(key);
   return key;
 }
@@ -1834,6 +1857,7 @@ function grantRandomReward() {
 function grantRewardSilently(key) {
   // Add to inventory and re-render bar WITHOUT pop animation
   playerRewards[key] = (playerRewards[key] || 0) + 1;
+  saveRewards();
   renderRewardBar(key); // key passed so new one gets pop
 }
 
@@ -1898,6 +1922,7 @@ function activateReward(key, btn) {
   btn.classList.add('using');
   setTimeout(() => {
     playerRewards[key]--;
+    saveRewards();
     applyReward(key);
     renderRewardBar();
   }, 280);
@@ -2215,6 +2240,11 @@ async function initLevel() {
   state.patternComplexity = pc;
   state.fullImage = await generateLevelImage(level, cols, rows, pc);
 
+  // Load the source image's natural aspect so tiles render with cover-crop, not stretch.
+  const imgDim = await loadImageDimensions(state.fullImage);
+  state.imgW = imgDim.w;
+  state.imgH = imgDim.h;
+
   // Pre-extract all tile images
   state.tileImages = {};
   const extractPromises = [];
@@ -2222,8 +2252,8 @@ async function initLevel() {
     for (let c = 0; c < cols; c++) {
       const idx = r * cols + c;
       extractPromises.push(
-        extractTile(state.fullImage, r, c, cols, rows).then(url => {
-          state.tileImages[idx] = url;
+        extractTile(state.fullImage, r, c, cols, rows).then(td => {
+          state.tileImages[idx] = td;
         })
       );
     }
@@ -2261,6 +2291,8 @@ function buildGrid(cols, rows) {
   grid.style.gridTemplateRows = `repeat(${rows}, ${tileSize}px)`;
   grid.innerHTML = '';
 
+  const cov = getCoverMetrics(cols, rows, tileSize, state.imgW || 1, state.imgH || 1);
+
   for (let i = 0; i < cols * rows; i++) {
     const tile = document.createElement('div');
     tile.className = 'tile';
@@ -2273,10 +2305,14 @@ function buildGrid(cols, rows) {
     inner.textContent = '○';
     tile.appendChild(inner);
 
-    const img = document.createElement('img');
-    img.src = state.tileImages[i];
-    img.alt = '';
-    tile.appendChild(img);
+    const td = state.tileImages[i]; // { src, row, col, cols, rows }
+    const imgDiv = document.createElement('div');
+    imgDiv.className = 'tile-img';
+    imgDiv.style.backgroundImage  = `url('${td.src}')`;
+    imgDiv.style.backgroundSize   = `${cov.bgW}px ${cov.bgH}px`;
+    imgDiv.style.backgroundRepeat = 'no-repeat';
+    imgDiv.style.backgroundPosition = `${-(td.col * tileSize) - cov.xOverflow}px ${-(td.row * tileSize) - cov.yOverflow}px`;
+    tile.appendChild(imgDiv);
 
     // touchstart fires immediately on finger contact — required for vibration on mobile
     tile.addEventListener('touchstart', () => {
@@ -2303,8 +2339,6 @@ async function revealFirstTile() {
 
   const tileEl = getTileEl(firstIdx);
   tileEl.classList.add('revealed');
-  tileEl.querySelector('img').style.opacity = '1';
-  tileEl.querySelector('img').style.transform = 'scale(1)';
   await sleep(300);
 }
 
@@ -2388,18 +2422,22 @@ function buildQueueBelt(growing = false) {
       div.className = 'q-tile is-next';
     }
 
-    const img = document.createElement('img');
-    img.style.display    = 'block';
-    img.style.width      = '100%';
-    img.style.height     = '100%';
-    img.style.objectFit  = 'cover';
+    const qImg = document.createElement('div');
+    qImg.style.display    = 'block';
+    qImg.style.width      = '100%';
+    qImg.style.height     = '100%';
     if (queuePos < state.totalTiles) {
-      img.src = state.tileImages[state.revealQueue[queuePos]];
+      const qtd = state.tileImages[state.revealQueue[queuePos]];
+      const qcov = getCoverMetrics(cols, rows, size, state.imgW || 1, state.imgH || 1);
+      qImg.style.backgroundImage    = `url('${qtd.src}')`;
+      qImg.style.backgroundSize     = `${qcov.bgW}px ${qcov.bgH}px`;
+      qImg.style.backgroundRepeat   = 'no-repeat';
+      qImg.style.backgroundPosition = `${-(qtd.col * size) - qcov.xOverflow}px ${-(qtd.row * size) - qcov.yOverflow}px`;
     } else {
       div.style.background = 'var(--surface)';
       div.style.opacity    = '0.1';
     }
-    div.appendChild(img);
+    div.appendChild(qImg);
     belt.appendChild(div);
   }
 }
@@ -2499,8 +2537,6 @@ async function handleTileClick(clickedIdx) {
     tileEl.classList.add('flash-correct');
     tileEl.classList.add('revealed');
     tileEl.classList.remove('available');
-    tileEl.querySelector('img').style.opacity = '1';
-    tileEl.querySelector('img').style.transform = 'scale(1)';
     state.revealedTiles.add(clickedIdx);
     state.currentTileIndex++;
     state.score += 100 + (state.level * 10);
@@ -2579,10 +2615,18 @@ async function showLevelComplete() {
   preview.style.height = previewH + 'px';
   preview.innerHTML = '';
 
+  const pcov = getCoverMetrics(cols, rows, tileW, state.imgW || 1, state.imgH || 1);
+
   for (let i = 0; i < state.totalTiles; i++) {
-    const img = document.createElement('img');
-    img.src = state.tileImages[i];
-    preview.appendChild(img);
+    const td = state.tileImages[i];
+    const pdiv = document.createElement('div');
+    pdiv.style.width  = tileW + 'px';
+    pdiv.style.height = tileW + 'px';
+    pdiv.style.backgroundImage    = `url('${td.src}')`;
+    pdiv.style.backgroundSize     = `${pcov.bgW}px ${pcov.bgH}px`;
+    pdiv.style.backgroundRepeat   = 'no-repeat';
+    pdiv.style.backgroundPosition = `${-(td.col * tileW) - pcov.xOverflow}px ${-(td.row * tileW) - pcov.yOverflow}px`;
+    preview.appendChild(pdiv);
   }
 
   const { cols: nextCols, rows: nextRows } = getGridDimensions(state.level + 1);
@@ -2618,12 +2662,41 @@ function loadLevel() {
   try { return Math.max(1, parseInt(localStorage.getItem('puzzland_level')) || 1); } catch(e) { return 1; }
 }
 
+function saveRewards() {
+  try { localStorage.setItem('puzzland_rewards', JSON.stringify(playerRewards)); } catch(e) {}
+}
+function loadRewards() {
+  try {
+    const raw = localStorage.getItem('puzzland_rewards');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // Only keep known reward keys with positive integer counts
+    const clean = {};
+    for (const k of REWARD_KEYS) {
+      const n = parseInt(parsed[k]);
+      if (Number.isFinite(n) && n > 0) clean[k] = n;
+    }
+    return clean;
+  } catch(e) { return {}; }
+}
+function clearSavedRewards() {
+  try { localStorage.removeItem('puzzland_rewards'); } catch(e) {}
+}
+
+function updateStartOverlayLevel() {
+  const lvl = loadLevel();
+  const btn = document.getElementById('startPlayBtn');
+  if (btn) {
+    btn.textContent = lvl > 1 ? `CONTINUE FROM LEVEL ${lvl}` : 'START PLAYING';
+  }
+}
+
 async function startGame() {
   isTransitioning = false;
   stopTimer();
   state.level = loadLevel();
   state.score = 0;
-  playerRewards = {};
+  playerRewards = loadRewards();
   hideOverlays();
   await initLevel();
   renderRewardBar();
@@ -2680,6 +2753,8 @@ function hideRestartConfirm() {
 function confirmRestart() {
   hideRestartConfirm();
   saveLevel(1);
+  clearSavedRewards();
+  updateStartOverlayLevel();
   startGame();
 }
 
@@ -2746,7 +2821,31 @@ function goToMainMenu() {
   stopTimer();
   stopMusic();
   hideOverlays();
+  updateStartOverlayLevel();
   document.getElementById('startOverlay').classList.add('active');
+}
+
+function onLogoTap() {
+  // Ignore if any overlay is already active (start screen, game over, level complete, ads, dialogs)
+  if (document.querySelector('.overlay.active')) return;
+  document.getElementById('mainMenuConfirmOverlay').classList.add('active');
+  // Pause the timer while the dialog is up so the player isn't punished for deliberating
+  stopTimer();
+}
+
+function hideMainMenuConfirm() {
+  document.getElementById('mainMenuConfirmOverlay').classList.remove('active');
+  // Resume the level timer from where it left off
+  if (typeof timerSecondsLeft === 'number' && timerSecondsLeft > 0) {
+    startTimer(timerSecondsLeft);
+  }
+}
+
+function confirmMainMenu() {
+  document.getElementById('mainMenuConfirmOverlay').classList.remove('active');
+  // Save the current level so "CONTINUE FROM LEVEL N" reflects where they left off
+  if (state && state.level) saveLevel(state.level);
+  goToMainMenu();
 }
 
 async function restartLevel() {
@@ -2893,6 +2992,7 @@ async function showRewardReveal(key, snapshot) {
         token.remove();
         // ── 9. NOW grant reward and re-render bar with pop ──
         playerRewards[key] = (playerRewards[key] || 0) + 1;
+        saveRewards();
         renderRewardBar(key);
         resolve();
       }
@@ -3384,6 +3484,7 @@ function toggleMute() {
 
 // Apply saved mute state to button on load
 document.addEventListener('DOMContentLoaded', () => {
+  updateStartOverlayLevel();
   if (isMuted) {
     const btn   = document.getElementById('muteBtn');
     const slash = document.getElementById('muteSlash');
@@ -4101,8 +4202,6 @@ window.addEventListener('resize', () => {
         const el = getTileEl(idx);
         if (el) {
           el.classList.add('revealed');
-          const img = el.querySelector('img');
-          if (img) { img.style.opacity = '1'; img.style.transform = 'scale(1)'; }
         }
       });
       updateAvailableStates();
